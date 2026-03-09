@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>KW Environmental — SF Data Cleanup Tool</title>
+  <title>KW Environmental — Customer List Cleanup Tool</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -140,7 +140,7 @@
 <header>
   <div>
     <div class="logo">Fleet Fusion</div>
-    <div class="subtitle">KW Environmental — Service Fusion Data Cleanup</div>
+    <div class="subtitle">KW Environmental — Customer List Cleanup</div>
   </div>
   <div class="badge" id="phase-badge">Phase 1: Upload</div>
 </header>
@@ -155,7 +155,7 @@
       <p>Drag and drop your .xlsx or .csv file, or click to browse</p>
       <button class="btn-primary" id="browse-btn">Choose File</button>
       <input type="file" id="file-input" accept=".xlsx,.csv" style="display:none" />
-      <p class="hint">Accepts the "Expanded Day Sheet By Service Tech" export format</p>
+      <p class="hint">Accepts the Service Fusion "Customer List" export (.xlsx)</p>
     </div>
   </div>
 
@@ -279,72 +279,98 @@ function parseFile(file) {
 }
 
 function processWorkbook(wb) {
-  const ws = wb.Sheets[wb.SheetNames[0]];
+  const ws   = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
 
-  // Find header row containing "customer"
+  // Find header row where first cell is exactly "Customer Name"
   let hi = -1;
   for (let i = 0; i < Math.min(rows.length, 20); i++) {
-    if (rows[i] && rows[i].some(c => c && String(c).toLowerCase().includes('customer'))) { hi = i; break; }
+    const first = rows[i] && rows[i][0] ? String(rows[i][0]).trim() : '';
+    if (first === 'Customer Name') { hi = i; break; }
   }
-  if (hi === -1) { alert('Could not locate header row. Check the file format.'); return; }
+  if (hi === -1) {
+    // Fallback: any row containing "Customer Name" in any column
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      if (rows[i] && rows[i].some(c => c && String(c).trim() === 'Customer Name')) { hi = i; break; }
+    }
+  }
+  if (hi === -1) {
+    alert('Could not find the Customer Name column. Please use the Service Fusion Customer List report export.');
+    return;
+  }
 
   const headers = rows[hi].map(h => h ? String(h).trim() : '');
-  const data    = rows.slice(hi + 1).filter(r => r && r.some(Boolean));
+  const data    = rows.slice(hi + 1).filter(r => r && r[0]);
 
-  const col = name => headers.findIndex(h => h.toLowerCase().includes(name));
-  const custIdx   = col('customer');
-  const locIdx    = col('service location');
-  const statusIdx = col('status');
-  const dateIdx   = col('date');
-  const techIdx   = col('name');
+  const col = name => headers.findIndex(h => h === name);
 
-  // Aggregate by customer name
-  const agg = {};
-  let currentTech = '';
-  data.forEach(row => {
-    const mayTech = row[techIdx] ? String(row[techIdx]).trim() : '';
-    if (mayTech && !/^\d/.test(mayTech)) currentTech = mayTech;
-    const cust = row[custIdx] ? String(row[custIdx]).trim() : '';
-    if (!cust) return;
-    if (!agg[cust]) agg[cust] = { jobs: 0, statuses: new Set(), addresses: new Set(), dates: [] };
-    agg[cust].jobs++;
-    if (row[statusIdx]) agg[cust].statuses.add(String(row[statusIdx]));
-    if (row[locIdx]) {
-      let addr = String(row[locIdx]).trim();
-      if (addr.startsWith(cust)) addr = addr.slice(cust.length).trim();
-      if (addr.length > 5) agg[cust].addresses.add(addr);
-    }
-    if (row[dateIdx]) agg[cust].dates.push(String(row[dateIdx]));
+  const iName    = 0;
+  const iParent  = col('Parent Account Name');
+  const iActive  = col('Is Active');
+  const iAddr1   = col('Primary Service Location Address 1');
+  const iCity    = col('Primary Service Location City');
+  const iState   = col('Primary Service Location State/Province');
+  const iZip     = col('Primary Service Location Zip/Postal Code');
+  const iAgent   = col('Assigned Agent');
+  const iCreated = col('Date Created');
+  const iAcctNum = col('Account Number');
+
+  function buildAddress(row) {
+    return [row[iAddr1], row[iCity], row[iState], row[iZip]]
+      .filter(Boolean).map(v => String(v).trim()).join(', ');
+  }
+
+  const norm = name =>
+    name.replace(/^DKW[\s\-\u2013]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+  const dkwRows   = data.filter(r => /^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+  const cleanRows = data.filter(r => !/^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+
+  const cleanMap = {};
+  cleanRows.forEach(r => {
+    const n = norm(String(r[iName]));
+    if (n) cleanMap[n] = r;
   });
 
-  const norm = name => name.replace(/^DKW[-\s]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-
-  const dkwEntries   = Object.entries(agg).filter(([k]) => /^DKW[-\s]/i.test(k));
-  const cleanEntries = Object.entries(agg).filter(([k]) => !/^DKW[-\s]/i.test(k));
-  const cleanMap = {};
-  cleanEntries.forEach(([k, v]) => { cleanMap[norm(k)] = { name: k, ...v }; });
-
-  S.pairs   = [];
-  S.orphans = [];
+  S.pairs     = [];
+  S.orphans   = [];
   S.decisions = {};
-  S.activeTab = 'pairs';
+  S.activeTab   = 'pairs';
   S.searchQuery = '';
 
-  dkwEntries.forEach(([dkwName, d]) => {
-    const n       = norm(dkwName);
-    const addr    = Array.from(d.addresses)[0] || '';
-    const lastJob = [...d.dates].sort().pop() || '';
-    const statuses = Array.from(d.statuses);
-    const suggested = dkwName.replace(/^DKW[-\s]*/i, '').trim();
+  dkwRows.forEach(r => {
+    const dkwName   = String(r[iName]).trim();
+    const n         = norm(dkwName);
+    const address   = buildAddress(r);
+    const agent     = r[iAgent]   ? String(r[iAgent]).trim()   : '';
+    const created   = r[iCreated] ? String(r[iCreated]).trim() : '';
+    const acctNum   = r[iAcctNum] ? String(r[iAcctNum]).trim() : '';
+    const suggested = dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
 
     if (cleanMap[n]) {
-      S.pairs.push({ dkwName, cleanName: cleanMap[n].name, cleanJobs: cleanMap[n].jobs,
-        jobs: d.jobs, address: addr, statuses, lastJob, rec: 'inactivate' });
+      const cr = cleanMap[n];
+      S.pairs.push({
+        dkwName,
+        cleanName:  String(cr[iName]).trim(),
+        cleanAgent: cr[iAgent]   ? String(cr[iAgent]).trim()   : '',
+        cleanAcct:  cr[iAcctNum] ? String(cr[iAcctNum]).trim() : '',
+        address,
+        agent,
+        created,
+        acctNum,
+        rec: 'inactivate',
+      });
     } else {
-      const allInactive = statuses.length > 0 && statuses.every(s => /closed|paused|cancel/i.test(s));
-      S.orphans.push({ dkwName, suggestedName: suggested, cleanName: null,
-        jobs: d.jobs, address: addr, statuses, lastJob, rec: allInactive ? 'inactivate' : 'rename' });
+      S.orphans.push({
+        dkwName,
+        suggestedName: suggested,
+        cleanName: null,
+        address,
+        agent,
+        created,
+        acctNum,
+        rec: 'rename',
+      });
     }
   });
 
@@ -439,7 +465,7 @@ function renderTable() {
   const cols  = ['#', 'DKW Record',
     S.activeTab === 'pairs'   ? 'Clean Counterpart'  :
     S.activeTab === 'orphans' ? 'Suggested Rename'   : 'Match / Rename',
-    'Address', 'Jobs', 'Status', 'Rec.', 'Action'];
+    'Address', 'Agent / Territory', 'Acct #', 'Rec.', 'Action'];
   cols.forEach(c => {
     const th = document.createElement('th');
     th.textContent = c;
@@ -502,13 +528,11 @@ function renderTable() {
     addrTd.appendChild(addrSp);
     tr.appendChild(addrTd);
 
-    // Jobs col
-    appendTd(tr, String(r.jobs), 'text-align:center;font-weight:600');
+    // Agent / Territory col
+    appendTd(tr, r.agent || '—', 'font-size:12px;color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap');
 
-    // Status col
-    const statTd = document.createElement('td');
-    statTd.appendChild(buildStatusPill(r.statuses));
-    tr.appendChild(statTd);
+    // Acct # col
+    appendTd(tr, r.acctNum || '—', 'font-size:12px;color:var(--text-muted);text-align:center');
 
     // Rec col
     const recTd = document.createElement('td');
@@ -638,7 +662,7 @@ function exportXlsx(includeAll) {
   const records = includeAll ? allRecords() : allRecords().filter(r => S.decisions[r.dkwName] && S.decisions[r.dkwName] !== 'skip');
   if (!records.length) { alert('No decided records to export.'); return; }
 
-  const rows = [['DKW Record Name', 'Action', 'Clean Counterpart / Rename To', 'Address', 'Jobs', 'Job Statuses', 'Recommendation', 'Notes']];
+  const rows = [['DKW Record Name', 'Action', 'Clean Counterpart / Rename To', 'Address', 'Agent / Territory', 'Account #', 'Recommendation', 'Notes']];
   records.forEach(r => {
     const action  = S.decisions[r.dkwName] || 'pending';
     const matchTo = r.cleanName || r.suggestedName || '';
@@ -646,7 +670,7 @@ function exportXlsx(includeAll) {
       ? (r.cleanName ? 'Keep: ' + r.cleanName : 'Mark inactive — no clean counterpart')
       : action === 'rename' ? 'Strip DKW- prefix → rename to: ' + (r.suggestedName || '')
       : '';
-    rows.push([r.dkwName, action.toUpperCase(), matchTo, r.address, r.jobs, r.statuses.join(' | '), r.rec.toUpperCase(), note]);
+    rows.push([r.dkwName, action.toUpperCase(), matchTo, r.address, r.agent || '', r.acctNum || '', r.rec.toUpperCase(), note]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(rows);

@@ -60,14 +60,14 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .stat-card { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); position: relative; }
     .stat-card[data-tip]:hover::after {
       content: attr(data-tip);
-      position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%);
       background: #1e293b; color: white; font-size: 12px; font-weight: 400; line-height: 1.5;
       padding: 8px 12px; border-radius: 6px; width: 240px; white-space: normal;
       box-shadow: 0 4px 12px rgba(0,0,0,.2); z-index: 100; pointer-events: none;
     }
     .stat-card[data-tip]:hover::before {
-      content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%);
-      border: 6px solid transparent; border-top-color: #1e293b; z-index: 100; pointer-events: none;
+      content: ''; position: absolute; top: calc(100% + 2px); left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-bottom-color: #1e293b; z-index: 100; pointer-events: none;
     }
     .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 6px; }
     .stat-card .value { font-size: 28px; font-weight: 700; line-height: 1; }
@@ -115,6 +115,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th { background: var(--neutral-light); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
     td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; max-width: 260px; }
+    td:last-child { max-width: none; white-space: nowrap; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f8fafc; }
     tr.decided td { opacity: .7; }
@@ -136,7 +137,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .rec-inactivate { background: var(--danger-light); color: var(--danger); }
     .rec-rename     { background: var(--warn-light); color: var(--warn); }
     .rec-review     { background: var(--info-light); color: var(--info); }
-    .actions { display: flex; gap: 6px; }
+    .actions { display: flex; gap: 6px; white-space: nowrap; min-width: 220px; }
     .action-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid transparent; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s; }
     .ab-inactivate { background: var(--danger-light); color: var(--danger); border-color: #fca5a5; }
     .ab-inactivate:hover { background: var(--danger); color: white; border-color: var(--danger); }

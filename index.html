@@ -249,8 +249,10 @@ function visibleRecords() {
 }
 
 // ── Upload wiring ──────────────────────────────────────────────────────────
-document.getElementById('browse-btn').addEventListener('click', () =>
-  document.getElementById('file-input').click());
+document.getElementById('browse-btn').addEventListener('click', e => {
+  e.stopPropagation();
+  document.getElementById('file-input').click();
+});
 document.getElementById('file-input').addEventListener('change', e =>
   e.target.files[0] && parseFile(e.target.files[0]));
 

@@ -756,12 +756,14 @@ function exportXlsx(includeAll) {
   const HEADER = ['ACTION', 'DKW RECORD  (To Action)', 'CLEAN NAME  /  RENAME TO', 'ADDRESS', 'ACCT #', 'NOTES FOR TEAM'];
 
   const dataRows = records.map(r => {
-    const action  = (S.decisions[r.dkwName] || 'pending').toUpperCase();
-    const cleanTo = r.cleanName || r.suggestedName || '';
-    const note    = action === 'INACTIVATE'
+    const action    = (S.decisions[r.dkwName] || 'pending').toUpperCase();
+    // renameTo: prefer stored suggestedName, fall back to stripping prefix from dkwName
+    const renameTo  = r.suggestedName || r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+    const cleanTo   = action === 'RENAME' ? renameTo : (r.cleanName || '');
+    const note      = action === 'INACTIVATE'
       ? 'Find in SF \u2192 set status to Inactive' + (r.cleanName ? ' (keep: ' + r.cleanName + ')' : '')
       : action === 'RENAME'
-      ? 'Edit name in SF \u2192 remove DKW prefix \u2192 rename to: ' + (r.suggestedName || '')
+      ? 'Edit name in SF \u2192 remove DKW prefix \u2192 rename to: ' + renameTo
       : 'No action needed';
     return [action, r.dkwName, cleanTo, r.address || '', r.acctNum || '', note];
   });

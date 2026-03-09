@@ -57,7 +57,18 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .upload-zone .hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
 
     .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
-    .stat-card { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); }
+    .stat-card { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); position: relative; }
+    .stat-card[data-tip]:hover::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
+      background: #1e293b; color: white; font-size: 12px; font-weight: 400; line-height: 1.5;
+      padding: 8px 12px; border-radius: 6px; width: 240px; white-space: normal;
+      box-shadow: 0 4px 12px rgba(0,0,0,.2); z-index: 100; pointer-events: none;
+    }
+    .stat-card[data-tip]:hover::before {
+      content: ''; position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%);
+      border: 6px solid transparent; border-top-color: #1e293b; z-index: 100; pointer-events: none;
+    }
     .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 6px; }
     .stat-card .value { font-size: 28px; font-weight: 700; line-height: 1; }
     .stat-card.brand .value { color: var(--brand); }
@@ -458,7 +469,7 @@ function setStatsBar(id, cards) {
     const card = document.createElement('div');
     card.className = 'stat-card ' + c.cls;
     const tooltip = STAT_TOOLTIPS[c.label];
-    if (tooltip) card.title = tooltip;
+    if (tooltip) card.dataset.tip = tooltip;
     const lbl = document.createElement('div');
     lbl.className = 'label';
     lbl.textContent = c.label;

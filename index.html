@@ -411,8 +411,11 @@ function renderStats() {
     { cls: 'success', label: 'Decided',             value: decided },
   ]);
 
-  setText('tab-pairs-count',   S.pairs.length);
-  setText('tab-orphans-count', S.orphans.length);
+  const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
+  const orphansRemaining = S.orphans.filter(r => !S.decisions[r.dkwName]).length;
+
+  setText('tab-pairs-count',   pairsRemaining);
+  setText('tab-orphans-count', orphansRemaining);
   setText('tab-done-count',    decided);
   setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
 }

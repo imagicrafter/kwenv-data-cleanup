@@ -24,6 +24,8 @@
     header .logo { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
     header .subtitle { font-size: 13px; opacity: .75; margin-top: 2px; }
     header .badge { margin-left: auto; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+    header .reset-btn { background: rgba(220,38,38,.25); border: 1px solid rgba(220,38,38,.5); color: white; border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background .15s; }
+    header .reset-btn:hover { background: rgba(220,38,38,.55); }
 
     .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
 
@@ -155,6 +157,7 @@
     <div class="subtitle">KW Environmental — Customer List Cleanup</div>
   </div>
   <div class="badge" id="phase-badge">Step 1: Upload</div>
+  <button class="reset-btn hidden" id="header-reset-btn">↺ Reset</button>
 </header>
 
 <div class="container">
@@ -401,6 +404,7 @@ function processWorkbook(wb) {
 
   show('phase-upload', false);
   show('phase-worklist', true);
+  show('header-reset-btn', true);
   document.getElementById('phase-badge').textContent = 'Step 2: Review Worklist';
   renderAll();
 }
@@ -833,15 +837,26 @@ function runVerification(wb) {
 }
 
 // ── Reset ──────────────────────────────────────────────────────────────────
-document.getElementById('reset-btn').addEventListener('click', () => {
+function doReset() {
   clearSession();
   Object.assign(S, { pairs: [], orphans: [], decisions: {}, activeTab: 'pairs', searchQuery: '', sessionKey: null });
   show('phase-upload', true);
   show('phase-worklist', false);
   show('phase-verify', false);
+  show('header-reset-btn', false);
   document.getElementById('phase-badge').textContent = 'Step 1: Upload';
   document.getElementById('file-input').value = '';
   document.getElementById('verify-input').value = '';
+}
+
+document.getElementById('reset-btn').addEventListener('click', doReset);
+
+document.getElementById('header-reset-btn').addEventListener('click', () => {
+  const decided = Object.keys(S.decisions).length;
+  const msg = decided > 0
+    ? `Reset session? You have ${decided} saved decisions that will be lost.`
+    : 'Reset session and upload a new file?';
+  if (confirm(msg)) doReset();
 });
 </script>
 </body>

@@ -164,7 +164,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     <div class="logo">Fleet Fusion</div>
     <div class="subtitle">KW Environmental — Customer List Cleanup</div>
   </div>
-  <div class="badge" id="phase-badge">Phase 1: Upload</div>
+  <div class="badge" id="phase-badge">Step 1: Upload</div>
 </header>
 
 <div class="container">
@@ -214,7 +214,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
       <div class="table-wrap" id="table-wrap"></div>
     </div>
     <div class="verify-zone">
-      <h3>📥 Phase 2: Verify Cleanup</h3>
+      <h3>📥 Step 3: Verify Cleanup</h3>
       <p>After your team completes the actions in Service Fusion, re-upload the new export to confirm changes.</p>
       <button class="btn-primary" id="verify-upload-btn">Upload Post-Cleanup Export</button>
       <input type="file" id="verify-input" accept=".xlsx,.csv" style="display:none" />
@@ -411,7 +411,7 @@ function processWorkbook(wb) {
 
   show('phase-upload', false);
   show('phase-worklist', true);
-  document.getElementById('phase-badge').textContent = 'Phase 2: Review Worklist';
+  document.getElementById('phase-badge').textContent = 'Step 2: Review Worklist';
   renderAll();
 }
 
@@ -442,12 +442,24 @@ function renderStats() {
   setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
 }
 
+const STAT_TOOLTIPS = {
+  'Total DKW Records':  'Every customer record that starts with "DKW-" in your Service Fusion export. These are the dispatch-side duplicates that need to be cleaned up.',
+  'Confirmed Pairs':    'DKW records where a matching clean customer record already exists in Service Fusion. Recommended action: Inactivate the DKW version and keep the clean one.',
+  'Unmatched DKW':      'DKW records with no clean counterpart found. These need your review — either rename them (strip the DKW- prefix) or inactivate if the customer is no longer active.',
+  'To Inactivate':      'Records you\'ve marked to inactivate in Service Fusion. The DKW record will be set to inactive — history is preserved, it just won\'t appear in active customer lists.',
+  'To Rename':          'Records you\'ve marked to rename. The DKW- prefix will be stripped so the name matches the standard naming convention.',
+  'Decided':            'Total decisions made so far across all records. Export this list for your team to action in Service Fusion.',
+};
+
 function setStatsBar(id, cards) {
   const bar = document.getElementById(id);
   bar.innerHTML = '';
   cards.forEach(c => {
     const card = document.createElement('div');
     card.className = 'stat-card ' + c.cls;
+    card.style.cursor = 'help';
+    const tooltip = STAT_TOOLTIPS[c.label];
+    if (tooltip) card.title = tooltip;
     const lbl = document.createElement('div');
     lbl.className = 'label';
     lbl.textContent = c.label;
@@ -813,7 +825,7 @@ function runVerification(wb) {
 
   show('phase-worklist', false);
   show('phase-verify', true);
-  document.getElementById('phase-badge').textContent = 'Phase 3: Verify';
+  document.getElementById('phase-badge').textContent = 'Step 3: Verify';
 
   setStatsBar('verify-stats', [
     { cls: 'success', label: 'Passed', value: pass },
@@ -843,7 +855,7 @@ document.getElementById('reset-btn').addEventListener('click', () => {
   show('phase-upload', true);
   show('phase-worklist', false);
   show('phase-verify', false);
-  document.getElementById('phase-badge').textContent = 'Phase 1: Upload';
+  document.getElementById('phase-badge').textContent = 'Step 1: Upload';
   document.getElementById('file-input').value = '';
   document.getElementById('verify-input').value = '';
 });

@@ -457,7 +457,6 @@ function setStatsBar(id, cards) {
   cards.forEach(c => {
     const card = document.createElement('div');
     card.className = 'stat-card ' + c.cls;
-    card.style.cursor = 'help';
     const tooltip = STAT_TOOLTIPS[c.label];
     if (tooltip) card.title = tooltip;
     const lbl = document.createElement('div');

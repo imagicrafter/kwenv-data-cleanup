@@ -112,16 +112,10 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .bulk-btn.skip:hover { background: var(--neutral); color: white; }
 
     .table-wrap { overflow-x: auto; }
-    table { table-layout: fixed; width: 100%; border-collapse: collapse; font-size: 13px; }
-    col.c-num    { width: 3%; }
-    col.c-dkw    { width: 18%; }
-    col.c-match  { width: 18%; }
-    col.c-addr   { width: 24%; }
-    col.c-agent  { width: 14%; }
-    col.c-acct   { width: 8%; }
-    col.c-action { width: 15%; }
-    th { background: var(--neutral-light); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: var(--neutral-light); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    th:last-child, td:last-child { white-space: nowrap; }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f8fafc; }
     tr.decided td { opacity: .7; }
@@ -527,16 +521,6 @@ function renderTable() {
   }
 
   const table = document.createElement('table');
-
-  // colgroup enforces fixed widths with table-layout:fixed
-  const cg = document.createElement('colgroup');
-  ['c-num','c-dkw','c-match','c-addr','c-agent','c-acct','c-action'].forEach(cls => {
-    const col = document.createElement('col');
-    col.className = cls;
-    cg.appendChild(col);
-  });
-  table.appendChild(cg);
-
   const thead = document.createElement('thead');
   const hRow  = document.createElement('tr');
   const cols  = ['#', 'DKW Record',

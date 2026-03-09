@@ -223,11 +223,12 @@ function txt(str) { return document.createTextNode(str == null ? '' : String(str
 
 // ── State ──────────────────────────────────────────────────────────────────
 const S = {
-  pairs:     [],   // {dkwName, cleanName, cleanJobs, jobs, address, statuses, lastJob, rec}
-  orphans:   [],   // {dkwName, suggestedName, jobs, address, statuses, lastJob, rec}
-  decisions: {},   // dkwName -> 'inactivate'|'rename'|'skip'
-  activeTab: 'pairs',
+  pairs:      [],   // {dkwName, cleanName, address, agent, acctNum, rec}
+  orphans:    [],   // {dkwName, suggestedName, address, agent, acctNum, rec}
+  decisions:  {},   // dkwName -> 'inactivate'|'rename'|'skip'
+  activeTab:  'pairs',
   searchQuery: '',
+  sessionKey:  null, // fingerprint of current dataset for localStorage matching
 };
 
 // ── Accessors ──────────────────────────────────────────────────────────────
@@ -373,6 +374,16 @@ function processWorkbook(wb) {
       });
     }
   });
+
+  // Compute a fingerprint for this dataset so saved decisions can be matched
+  S.sessionKey = `${S.pairs.length}:${S.orphans.length}:${(S.pairs[0] || S.orphans[0] || {}).dkwName || ''}`;
+
+  // Restore any previously saved decisions for this exact dataset
+  const saved = loadSession(S.sessionKey);
+  if (saved && Object.keys(saved).length > 0) {
+    S.decisions = saved;
+    showToast(`Restored ${Object.keys(saved).length} saved decisions from your last session.`);
+  }
 
   show('phase-upload', false);
   show('phase-worklist', true);
@@ -616,12 +627,14 @@ function handleDecide(e) {
   const name   = e.currentTarget.dataset.name;
   const action = e.currentTarget.dataset.action;
   S.decisions[name] = action;
+  saveSession(S.sessionKey, S.decisions);
   renderAll();
 }
 
 function handleUndo(e) {
   const name = e.currentTarget.dataset.name;
   delete S.decisions[name];
+  saveSession(S.sessionKey, S.decisions);
   renderAll();
 }
 
@@ -651,7 +664,56 @@ document.getElementById('bulk-skip-btn').addEventListener('click', () => bulkDec
 
 function bulkDecide(action) {
   visibleRecords().filter(r => !S.decisions[r.dkwName]).forEach(r => { S.decisions[r.dkwName] = action; });
+  saveSession(S.sessionKey, S.decisions);
   renderAll();
+}
+
+// ── Session persistence (localStorage) ────────────────────────────────────
+const STORAGE_KEY = 'kw-cleanup-session';
+
+function saveSession(key, decisions) {
+  if (!key) return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ key, decisions, savedAt: Date.now() }));
+  } catch (e) {
+    // localStorage unavailable (private browsing with storage blocked) — silently skip
+  }
+}
+
+function loadSession(key) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    return data.key === key ? data.decisions : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearSession() {
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* noop */ }
+}
+
+// ── Toast notification ─────────────────────────────────────────────────────
+function showToast(message) {
+  const existing = document.getElementById('kw-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'kw-toast';
+  toast.textContent = message;
+  Object.assign(toast.style, {
+    position: 'fixed', bottom: '24px', right: '24px',
+    background: '#1a5c3a', color: 'white',
+    padding: '12px 20px', borderRadius: '8px',
+    fontSize: '13px', fontWeight: '600',
+    boxShadow: '0 4px 12px rgba(0,0,0,.2)',
+    zIndex: '9999', maxWidth: '360px',
+    transition: 'opacity .4s',
+  });
+  document.body.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 4000);
 }
 
 // Export
@@ -749,7 +811,8 @@ function runVerification(wb) {
 
 // ── Reset ──────────────────────────────────────────────────────────────────
 document.getElementById('reset-btn').addEventListener('click', () => {
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, activeTab: 'pairs', searchQuery: '' });
+  clearSession();
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, activeTab: 'pairs', searchQuery: '', sessionKey: null });
   show('phase-upload', true);
   show('phase-worklist', false);
   show('phase-verify', false);

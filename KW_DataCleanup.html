@@ -770,24 +770,98 @@ document.getElementById('export-decided-btn').addEventListener('click', () => ex
 document.getElementById('export-all-btn').addEventListener('click',     () => exportXlsx(true));
 
 function exportXlsx(includeAll) {
-  const records = includeAll ? allRecords() : allRecords().filter(r => S.decisions[r.dkwName] && S.decisions[r.dkwName] !== 'skip');
+  const records = includeAll
+    ? allRecords()
+    : allRecords().filter(r => S.decisions[r.dkwName] && S.decisions[r.dkwName] !== 'skip');
   if (!records.length) { alert('No decided records to export.'); return; }
 
-  const rows = [['DKW Record Name', 'Action', 'Clean Counterpart / Rename To', 'Address', 'Agent / Territory', 'Account #', 'Recommendation', 'Notes']];
-  records.forEach(r => {
-    const action  = S.decisions[r.dkwName] || 'pending';
-    const matchTo = r.cleanName || r.suggestedName || '';
-    const note    = action === 'inactivate'
-      ? (r.cleanName ? 'Keep: ' + r.cleanName : 'Mark inactive — no clean counterpart')
-      : action === 'rename' ? 'Strip DKW- prefix → rename to: ' + (r.suggestedName || '')
-      : '';
-    rows.push([r.dkwName, action.toUpperCase(), matchTo, r.address, r.agent || '', r.acctNum || '', r.rec.toUpperCase(), note]);
+  const HEADER = ['ACTION', 'DKW RECORD  (To Action)', 'CLEAN NAME  /  RENAME TO', 'ADDRESS', 'ACCT #', 'NOTES FOR TEAM'];
+
+  const dataRows = records.map(r => {
+    const action  = (S.decisions[r.dkwName] || 'pending').toUpperCase();
+    const cleanTo = r.cleanName || r.suggestedName || '';
+    const note    = action === 'INACTIVATE'
+      ? 'Find in SF \u2192 set status to Inactive' + (r.cleanName ? ' (keep: ' + r.cleanName + ')' : '')
+      : action === 'RENAME'
+      ? 'Edit name in SF \u2192 remove DKW prefix \u2192 rename to: ' + (r.suggestedName || '')
+      : 'No action needed';
+    return [action, r.dkwName, cleanTo, r.address || '', r.acctNum || '', note];
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const ws = XLSX.utils.aoa_to_sheet([HEADER, ...dataRows]);
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 13 },  // ACTION
+    { wch: 34 },  // DKW RECORD
+    { wch: 32 },  // CLEAN NAME / RENAME TO
+    { wch: 38 },  // ADDRESS
+    { wch: 14 },  // ACCT #
+    { wch: 52 },  // NOTES FOR TEAM
+  ];
+
+  // Freeze header row
+  ws['!views'] = [{ state: 'frozen', ySplit: 1 }];
+
+  // Row height for header
+  ws['!rows'] = [{ hpt: 22 }];
+
+  // Cell styles
+  const S_HDR = {
+    fill: { patternType: 'solid', fgColor: { rgb: '1A5C3A' } },
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' },
+    alignment: { vertical: 'center', horizontal: 'center', wrapText: false },
+    border: { bottom: { style: 'thin', color: { rgb: 'FFFFFF' } } }
+  };
+  const S_INACTIVATE_ACTION = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FDF0EF' } },
+    font: { bold: true, color: { rgb: 'C0392B' }, sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center', horizontal: 'center' }
+  };
+  const S_RENAME_ACTION = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFFBEB' } },
+    font: { bold: true, color: { rgb: 'D97706' }, sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center', horizontal: 'center' }
+  };
+  const S_SKIP_ACTION = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'F8FAFC' } },
+    font: { color: { rgb: '64748B' }, sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center', horizontal: 'center' }
+  };
+  const S_ROW_EVEN = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+    font: { sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center' }
+  };
+  const S_ROW_ODD = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'F8FAFC' } },
+    font: { sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center' }
+  };
+
+  // Apply header styles
+  HEADER.forEach((_, c) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws[addr]) ws[addr].s = S_HDR;
+  });
+
+  // Apply data row styles
+  dataRows.forEach((row, ri) => {
+    const action = row[0];
+    const actionStyle = action === 'INACTIVATE' ? S_INACTIVATE_ACTION
+                      : action === 'RENAME'     ? S_RENAME_ACTION
+                      :                           S_SKIP_ACTION;
+    const rowStyle = ri % 2 === 0 ? S_ROW_EVEN : S_ROW_ODD;
+    row.forEach((_, c) => {
+      const addr = XLSX.utils.encode_cell({ r: ri + 1, c });
+      if (ws[addr]) ws[addr].s = c === 0 ? actionStyle : rowStyle;
+    });
+  });
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Cleanup Actions');
-  XLSX.writeFile(wb, 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  XLSX.writeFile(wb, 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx',
+    { cellStyles: true, bookSST: false, type: 'binary' });
 }
 
 // ── Verify Phase ───────────────────────────────────────────────────────────

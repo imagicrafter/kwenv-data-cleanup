@@ -21,9 +21,10 @@ app.use(basicAuth({
   realm: 'KW Environmental Data Cleanup',
 }));
 
-// Serve the self-contained offline build
+// Serve the app
+app.use(express.static(path.join(__dirname)));
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'KW_DataCleanup.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Health check for DO platform

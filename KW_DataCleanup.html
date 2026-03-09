@@ -114,6 +114,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th { background: var(--neutral-light); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th:last-child { min-width: 210px; }
     td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; max-width: 260px; }
     td:last-child { max-width: none; white-space: nowrap; }
     tr:last-child td { border-bottom: none; }
@@ -138,7 +139,7 @@ var o=[];var l=Array.isArray(e);for(f=n.s.c;f<=n.e.c;++f)s[f]=ya(f);for(var c=n.
     .rec-rename     { background: var(--warn-light); color: var(--warn); }
     .rec-review     { background: var(--info-light); color: var(--info); }
     .actions { display: flex; gap: 6px; white-space: nowrap; min-width: 220px; }
-    .action-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid transparent; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .action-btn { padding: 4px 8px; border-radius: 6px; border: 1px solid transparent; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap; }
     .ab-inactivate { background: var(--danger-light); color: var(--danger); border-color: #fca5a5; }
     .ab-inactivate:hover { background: var(--danger); color: white; border-color: var(--danger); }
     .ab-rename { background: var(--warn-light); color: var(--warn); border-color: #fcd34d; }

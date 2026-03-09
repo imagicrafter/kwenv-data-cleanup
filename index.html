@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KW Environmental — SF Data Cleanup Tool</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --brand: #1a5c3a; --brand-light: #e8f5ee; --brand-mid: #2e7d52;
+      --danger: #c0392b; --danger-light: #fdf0ef;
+      --warn: #d97706; --warn-light: #fffbeb;
+      --info: #1d6fa4; --info-light: #eff6ff;
+      --neutral: #64748b; --neutral-light: #f8fafc;
+      --border: #e2e8f0; --text: #1e293b; --text-muted: #64748b;
+      --radius: 8px;
+      --shadow: 0 1px 3px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: var(--text); min-height: 100vh; }
+
+    header { background: var(--brand); color: white; padding: 16px 24px; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+    header .logo { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    header .subtitle { font-size: 13px; opacity: .75; margin-top: 2px; }
+    header .badge { margin-left: auto; background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25); border-radius: 20px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+
+    .upload-zone { background: white; border: 2px dashed var(--border); border-radius: var(--radius); padding: 48px 32px; text-align: center; cursor: pointer; transition: border-color .2s, background .2s; }
+    .upload-zone:hover, .upload-zone.drag-over { border-color: var(--brand); background: var(--brand-light); }
+    .upload-icon { font-size: 48px; margin-bottom: 16px; }
+    .upload-zone h2 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+    .upload-zone p { color: var(--text-muted); font-size: 14px; margin-bottom: 20px; }
+    .upload-zone .hint { font-size: 12px; color: var(--text-muted); margin-top: 12px; }
+
+    .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat-card { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); }
+    .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 6px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; line-height: 1; }
+    .stat-card.brand .value { color: var(--brand); }
+    .stat-card.danger .value { color: var(--danger); }
+    .stat-card.warn .value { color: var(--warn); }
+    .stat-card.info .value { color: var(--info); }
+    .stat-card.success .value { color: #059669; }
+
+    .progress-wrap { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 20px; }
+    .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+    .progress-bar { height: 10px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .progress-fill { height: 100%; background: var(--brand); border-radius: 99px; transition: width .4s ease; }
+
+    .export-bar { background: white; border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 20px 24px; display: flex; align-items: center; gap: 16px; border-left: 4px solid var(--brand); margin-bottom: 20px; }
+    .export-bar .export-info { flex: 1; }
+    .export-bar h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .export-bar p { font-size: 13px; color: var(--text-muted); }
+    .export-btn { padding: 10px 20px; border-radius: var(--radius); border: none; font-size: 13px; font-weight: 700; cursor: pointer; transition: all .15s; }
+    .export-btn.primary { background: var(--brand); color: white; }
+    .export-btn.primary:hover { background: var(--brand-mid); }
+    .export-btn.secondary { background: var(--neutral-light); color: var(--text); border: 1px solid var(--border); }
+    .export-btn.secondary:hover { background: var(--border); }
+
+    .tabs { display: flex; gap: 2px; background: var(--border); border-radius: var(--radius) var(--radius) 0 0; overflow: hidden; }
+    .tab { padding: 12px 20px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; background: transparent; color: var(--text-muted); transition: all .15s; display: flex; align-items: center; gap: 8px; }
+    .tab:hover { background: rgba(255,255,255,.6); color: var(--text); }
+    .tab.active { background: white; color: var(--brand); }
+    .tab .count { background: var(--border); border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 700; }
+    .tab.active .count { background: var(--brand-light); color: var(--brand); }
+
+    .panel { background: white; border-radius: 0 0 var(--radius) var(--radius); box-shadow: var(--shadow-md); overflow: hidden; margin-bottom: 24px; }
+    .toolbar { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .search-box { flex: 1; min-width: 200px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; outline: none; }
+    .search-box:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(26,92,58,.1); }
+    .bulk-btn { padding: 8px 14px; border-radius: var(--radius); border: none; font-size: 12px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .bulk-btn.inactivate { background: var(--danger-light); color: var(--danger); }
+    .bulk-btn.inactivate:hover { background: var(--danger); color: white; }
+    .bulk-btn.rename { background: var(--warn-light); color: var(--warn); }
+    .bulk-btn.rename:hover { background: var(--warn); color: white; }
+    .bulk-btn.skip { background: var(--neutral-light); color: var(--neutral); }
+    .bulk-btn.skip:hover { background: var(--neutral); color: white; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: var(--neutral-light); padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; max-width: 260px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+    tr.decided td { opacity: .7; }
+
+    .dkw-badge { display: inline-block; background: #fef3c7; color: #92400e; border-radius: 4px; font-size: 10px; font-weight: 700; padding: 2px 6px; margin-right: 6px; }
+    .customer-name { font-weight: 600; }
+    .clean-match { color: var(--brand); font-weight: 500; font-size: 12px; display: block; }
+    .sub-note { font-size: 11px; color: var(--text-muted); display: block; }
+    .no-match { color: var(--text-muted); font-style: italic; font-size: 12px; }
+    .rename-to { color: var(--brand); font-size: 12px; display: block; }
+    .address-cell { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; display: block; }
+    .jobs-count { text-align: center; font-weight: 600; }
+    .status-pill { display: inline-block; border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .sp-scheduled { background: var(--info-light); color: var(--info); }
+    .sp-complete   { background: var(--brand-light); color: var(--brand); }
+    .sp-paused     { background: var(--warn-light); color: var(--warn); }
+    .sp-mixed      { background: #f3e8ff; color: #7c3aed; }
+    .rec { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 2px 6px; border-radius: 4px; white-space: nowrap; }
+    .rec-inactivate { background: var(--danger-light); color: var(--danger); }
+    .rec-rename     { background: var(--warn-light); color: var(--warn); }
+    .rec-review     { background: var(--info-light); color: var(--info); }
+    .actions { display: flex; gap: 6px; }
+    .action-btn { padding: 5px 10px; border-radius: 6px; border: 1px solid transparent; font-size: 11px; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .ab-inactivate { background: var(--danger-light); color: var(--danger); border-color: #fca5a5; }
+    .ab-inactivate:hover { background: var(--danger); color: white; border-color: var(--danger); }
+    .ab-rename { background: var(--warn-light); color: var(--warn); border-color: #fcd34d; }
+    .ab-rename:hover { background: var(--warn); color: white; border-color: var(--warn); }
+    .ab-skip { background: var(--neutral-light); color: var(--neutral); border-color: var(--border); }
+    .ab-skip:hover { background: var(--neutral); color: white; }
+    .ab-undo { background: transparent; color: var(--text-muted); border-color: var(--border); font-size: 10px; padding: 4px 8px; }
+    .ab-undo:hover { background: var(--border); }
+    .decided-label { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; display: inline-block; }
+    .dl-inactivate { background: var(--danger-light); color: var(--danger); }
+    .dl-rename     { background: var(--warn-light); color: var(--warn); }
+    .dl-skip       { background: var(--neutral-light); color: var(--neutral); }
+
+    .verify-zone { border: 2px dashed #a3e635; border-radius: var(--radius); padding: 24px; background: #f7fee7; text-align: center; margin-bottom: 24px; }
+    .verify-zone h3 { font-size: 15px; font-weight: 700; color: #365314; margin-bottom: 8px; }
+    .verify-zone p { font-size: 13px; color: #4d7c0f; margin-bottom: 16px; }
+    .verify-result { background: white; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 20px; margin-bottom: 10px; border-left: 4px solid; }
+    .vr-pass { border-color: #059669; }
+    .vr-fail { border-color: var(--danger); }
+    .vr-warn { border-color: var(--warn); }
+    .verify-result h4 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+    .verify-result p { font-size: 12px; color: var(--text-muted); }
+
+    .empty { text-align: center; padding: 48px 24px; color: var(--text-muted); }
+    .empty .icon { font-size: 40px; margin-bottom: 12px; }
+    .btn-primary { background: var(--brand); color: white; border: none; border-radius: var(--radius); padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .btn-primary:hover { background: var(--brand-mid); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">Fleet Fusion</div>
+    <div class="subtitle">KW Environmental — Service Fusion Data Cleanup</div>
+  </div>
+  <div class="badge" id="phase-badge">Phase 1: Upload</div>
+</header>
+
+<div class="container">
+
+  <!-- PHASE 1: UPLOAD -->
+  <div id="phase-upload">
+    <div class="upload-zone" id="drop-zone">
+      <div class="upload-icon">📊</div>
+      <h2>Upload Service Fusion Export</h2>
+      <p>Drag and drop your .xlsx or .csv file, or click to browse</p>
+      <button class="btn-primary" id="browse-btn">Choose File</button>
+      <input type="file" id="file-input" accept=".xlsx,.csv" style="display:none" />
+      <p class="hint">Accepts the "Expanded Day Sheet By Service Tech" export format</p>
+    </div>
+  </div>
+
+  <!-- PHASE 2: WORKLIST -->
+  <div id="phase-worklist" class="hidden">
+    <div class="stats-bar" id="stats-bar"></div>
+    <div class="progress-wrap">
+      <div class="progress-header">
+        <span>Cleanup Progress</span>
+        <span id="progress-label">0 of 0 decided</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
+    </div>
+    <div class="export-bar">
+      <div class="export-info">
+        <h3>Export Confirmed Actions</h3>
+        <p id="export-summary">Work through the records below, then export your action list.</p>
+      </div>
+      <button class="export-btn secondary" id="export-decided-btn">⬇ Export Decided</button>
+      <button class="export-btn primary" id="export-all-btn">⬇ Export All</button>
+    </div>
+    <div class="tabs" id="tabs">
+      <button class="tab active" data-tab="pairs">✂️ Confirmed Pairs <span class="count" id="tab-pairs-count">0</span></button>
+      <button class="tab" data-tab="orphans">🔍 Unmatched DKW <span class="count" id="tab-orphans-count">0</span></button>
+      <button class="tab" data-tab="done">✅ Decided <span class="count" id="tab-done-count">0</span></button>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <input class="search-box" id="search-box" placeholder="Search customers or addresses…" />
+        <button class="bulk-btn inactivate" id="bulk-inactivate-btn">Inactivate All Visible</button>
+        <button class="bulk-btn rename hidden" id="bulk-rename-btn">Rename All Visible</button>
+        <button class="bulk-btn skip" id="bulk-skip-btn">Skip All Visible</button>
+      </div>
+      <div class="table-wrap" id="table-wrap"></div>
+    </div>
+    <div class="verify-zone">
+      <h3>📥 Phase 2: Verify Cleanup</h3>
+      <p>After your team completes the actions in Service Fusion, re-upload the new export to confirm changes.</p>
+      <button class="btn-primary" id="verify-upload-btn">Upload Post-Cleanup Export</button>
+      <input type="file" id="verify-input" accept=".xlsx,.csv" style="display:none" />
+    </div>
+  </div>
+
+  <!-- PHASE 3: VERIFY -->
+  <div id="phase-verify" class="hidden">
+    <div class="stats-bar" id="verify-stats"></div>
+    <div id="verify-results"></div>
+    <button class="btn-primary" id="reset-btn" style="margin-bottom:24px">↩ Start New Session</button>
+  </div>
+
+</div>
+
+<script>
+'use strict';
+
+// ── Sanitize: escapes text for safe DOM insertion ──────────────────────────
+function t(str) {
+  const el = document.createElement('span');
+  el.textContent = str == null ? '' : String(str);
+  return el.textContent; // never used as HTML — just for building text nodes
+}
+
+// Build a text node safely
+function txt(str) { return document.createTextNode(str == null ? '' : String(str)); }
+
+// ── State ──────────────────────────────────────────────────────────────────
+const S = {
+  pairs:     [],   // {dkwName, cleanName, cleanJobs, jobs, address, statuses, lastJob, rec}
+  orphans:   [],   // {dkwName, suggestedName, jobs, address, statuses, lastJob, rec}
+  decisions: {},   // dkwName -> 'inactivate'|'rename'|'skip'
+  activeTab: 'pairs',
+  searchQuery: '',
+};
+
+// ── Accessors ──────────────────────────────────────────────────────────────
+function allRecords() { return [...S.pairs, ...S.orphans]; }
+
+function visibleRecords() {
+  let records;
+  if (S.activeTab === 'pairs')   records = S.pairs.filter(r => !S.decisions[r.dkwName]);
+  if (S.activeTab === 'orphans') records = S.orphans.filter(r => !S.decisions[r.dkwName]);
+  if (S.activeTab === 'done')    records = allRecords().filter(r => S.decisions[r.dkwName]);
+  const q = S.searchQuery;
+  if (!q) return records;
+  return records.filter(r =>
+    r.dkwName.toLowerCase().includes(q) ||
+    (r.cleanName && r.cleanName.toLowerCase().includes(q)) ||
+    (r.address && r.address.toLowerCase().includes(q))
+  );
+}
+
+// ── Upload wiring ──────────────────────────────────────────────────────────
+document.getElementById('browse-btn').addEventListener('click', () =>
+  document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change', e =>
+  e.target.files[0] && parseFile(e.target.files[0]));
+
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('click', () => document.getElementById('file-input').click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  e.dataTransfer.files[0] && parseFile(e.dataTransfer.files[0]);
+});
+
+document.getElementById('verify-upload-btn').addEventListener('click', () =>
+  document.getElementById('verify-input').click());
+document.getElementById('verify-input').addEventListener('change', e =>
+  e.target.files[0] && verifyFile(e.target.files[0]));
+
+// ── Parse ──────────────────────────────────────────────────────────────────
+function parseFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    processWorkbook(wb);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function processWorkbook(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+  // Find header row containing "customer"
+  let hi = -1;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    if (rows[i] && rows[i].some(c => c && String(c).toLowerCase().includes('customer'))) { hi = i; break; }
+  }
+  if (hi === -1) { alert('Could not locate header row. Check the file format.'); return; }
+
+  const headers = rows[hi].map(h => h ? String(h).trim() : '');
+  const data    = rows.slice(hi + 1).filter(r => r && r.some(Boolean));
+
+  const col = name => headers.findIndex(h => h.toLowerCase().includes(name));
+  const custIdx   = col('customer');
+  const locIdx    = col('service location');
+  const statusIdx = col('status');
+  const dateIdx   = col('date');
+  const techIdx   = col('name');
+
+  // Aggregate by customer name
+  const agg = {};
+  let currentTech = '';
+  data.forEach(row => {
+    const mayTech = row[techIdx] ? String(row[techIdx]).trim() : '';
+    if (mayTech && !/^\d/.test(mayTech)) currentTech = mayTech;
+    const cust = row[custIdx] ? String(row[custIdx]).trim() : '';
+    if (!cust) return;
+    if (!agg[cust]) agg[cust] = { jobs: 0, statuses: new Set(), addresses: new Set(), dates: [] };
+    agg[cust].jobs++;
+    if (row[statusIdx]) agg[cust].statuses.add(String(row[statusIdx]));
+    if (row[locIdx]) {
+      let addr = String(row[locIdx]).trim();
+      if (addr.startsWith(cust)) addr = addr.slice(cust.length).trim();
+      if (addr.length > 5) agg[cust].addresses.add(addr);
+    }
+    if (row[dateIdx]) agg[cust].dates.push(String(row[dateIdx]));
+  });
+
+  const norm = name => name.replace(/^DKW[-\s]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+  const dkwEntries   = Object.entries(agg).filter(([k]) => /^DKW[-\s]/i.test(k));
+  const cleanEntries = Object.entries(agg).filter(([k]) => !/^DKW[-\s]/i.test(k));
+  const cleanMap = {};
+  cleanEntries.forEach(([k, v]) => { cleanMap[norm(k)] = { name: k, ...v }; });
+
+  S.pairs   = [];
+  S.orphans = [];
+  S.decisions = {};
+  S.activeTab = 'pairs';
+  S.searchQuery = '';
+
+  dkwEntries.forEach(([dkwName, d]) => {
+    const n       = norm(dkwName);
+    const addr    = Array.from(d.addresses)[0] || '';
+    const lastJob = [...d.dates].sort().pop() || '';
+    const statuses = Array.from(d.statuses);
+    const suggested = dkwName.replace(/^DKW[-\s]*/i, '').trim();
+
+    if (cleanMap[n]) {
+      S.pairs.push({ dkwName, cleanName: cleanMap[n].name, cleanJobs: cleanMap[n].jobs,
+        jobs: d.jobs, address: addr, statuses, lastJob, rec: 'inactivate' });
+    } else {
+      const allInactive = statuses.length > 0 && statuses.every(s => /closed|paused|cancel/i.test(s));
+      S.orphans.push({ dkwName, suggestedName: suggested, cleanName: null,
+        jobs: d.jobs, address: addr, statuses, lastJob, rec: allInactive ? 'inactivate' : 'rename' });
+    }
+  });
+
+  show('phase-upload', false);
+  show('phase-worklist', true);
+  document.getElementById('phase-badge').textContent = 'Phase 2: Review Worklist';
+  renderAll();
+}
+
+// ── Render: stats, progress, table ────────────────────────────────────────
+function renderAll() { renderStats(); renderProgress(); renderTable(); }
+
+function renderStats() {
+  const total      = allRecords().length;
+  const decided    = Object.keys(S.decisions).length;
+  const inactivate = Object.values(S.decisions).filter(d => d === 'inactivate').length;
+  const rename     = Object.values(S.decisions).filter(d => d === 'rename').length;
+
+  setStatsBar('stats-bar', [
+    { cls: 'brand',   label: 'Total DKW Records',  value: total },
+    { cls: 'danger',  label: 'Confirmed Pairs',     value: S.pairs.length },
+    { cls: 'warn',    label: 'Unmatched DKW',       value: S.orphans.length },
+    { cls: 'info',    label: 'To Inactivate',       value: inactivate },
+    { cls: 'warn',    label: 'To Rename',           value: rename },
+    { cls: 'success', label: 'Decided',             value: decided },
+  ]);
+
+  setText('tab-pairs-count',   S.pairs.length);
+  setText('tab-orphans-count', S.orphans.length);
+  setText('tab-done-count',    decided);
+  setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
+}
+
+function setStatsBar(id, cards) {
+  const bar = document.getElementById(id);
+  bar.innerHTML = '';
+  cards.forEach(c => {
+    const card = document.createElement('div');
+    card.className = 'stat-card ' + c.cls;
+    const lbl = document.createElement('div');
+    lbl.className = 'label';
+    lbl.textContent = c.label;
+    const val = document.createElement('div');
+    val.className = 'value';
+    val.textContent = c.value;
+    card.appendChild(lbl);
+    card.appendChild(val);
+    bar.appendChild(card);
+  });
+}
+
+function renderProgress() {
+  const total   = allRecords().length;
+  const decided = Object.keys(S.decisions).length;
+  const pct     = total ? Math.round((decided / total) * 100) : 0;
+  document.getElementById('progress-fill').style.width  = pct + '%';
+  setText('progress-label', `${decided} of ${total} decided (${pct}%)`);
+}
+
+function setText(id, val) { document.getElementById(id).textContent = String(val); }
+function show(id, visible) { document.getElementById(id).classList.toggle('hidden', !visible); }
+
+// ── Table rendering (DOM-only, no innerHTML for user data) ─────────────────
+function renderTable() {
+  const wrap    = document.getElementById('table-wrap');
+  const records = visibleRecords();
+
+  if (records.length === 0) {
+    const div = document.createElement('div');
+    div.className = 'empty';
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = '✅';
+    const msg = document.createElement('p');
+    if (S.activeTab === 'done' && !Object.keys(S.decisions).length)
+      msg.textContent = 'No decisions made yet. Work through the Confirmed Pairs and Unmatched DKW tabs.';
+    else if (S.activeTab === 'pairs')
+      msg.textContent = '🎉 All confirmed pairs decided!';
+    else if (S.activeTab === 'orphans')
+      msg.textContent = '🎉 All unmatched records decided!';
+    else
+      msg.textContent = 'No records here yet.';
+    div.appendChild(icon);
+    div.appendChild(msg);
+    wrap.replaceChildren(div);
+    return;
+  }
+
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const hRow  = document.createElement('tr');
+  const cols  = ['#', 'DKW Record',
+    S.activeTab === 'pairs'   ? 'Clean Counterpart'  :
+    S.activeTab === 'orphans' ? 'Suggested Rename'   : 'Match / Rename',
+    'Address', 'Jobs', 'Status', 'Rec.', 'Action'];
+  cols.forEach(c => {
+    const th = document.createElement('th');
+    th.textContent = c;
+    hRow.appendChild(th);
+  });
+  thead.appendChild(hRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+
+  records.forEach((r, i) => {
+    const decided = S.decisions[r.dkwName];
+    const tr = document.createElement('tr');
+    if (decided) tr.classList.add('decided');
+
+    // # col
+    appendTd(tr, String(i + 1), 'color:var(--text-muted);font-size:12px');
+
+    // DKW name col
+    const nameTd = document.createElement('td');
+    const badge  = document.createElement('span');
+    badge.className   = 'dkw-badge';
+    badge.textContent = 'DKW';
+    const nameSp  = document.createElement('span');
+    nameSp.className  = 'customer-name';
+    nameSp.textContent = r.dkwName.replace(/^DKW[-\s]*/i, '');
+    nameTd.appendChild(badge);
+    nameTd.appendChild(nameSp);
+    tr.appendChild(nameTd);
+
+    // Match col
+    const matchTd = document.createElement('td');
+    if (r.cleanName) {
+      const sp = document.createElement('span');
+      sp.className   = 'clean-match';
+      sp.textContent = '✓ ' + r.cleanName;
+      const sub = document.createElement('span');
+      sub.className   = 'sub-note';
+      sub.textContent = (r.cleanJobs || 0) + ' jobs on clean record';
+      matchTd.appendChild(sp);
+      matchTd.appendChild(sub);
+    } else {
+      const no = document.createElement('span');
+      no.className   = 'no-match';
+      no.textContent = 'No match found';
+      const to = document.createElement('span');
+      to.className   = 'rename-to';
+      to.textContent = '→ ' + (r.suggestedName || '');
+      matchTd.appendChild(no);
+      matchTd.appendChild(to);
+    }
+    tr.appendChild(matchTd);
+
+    // Address col
+    const addrTd = document.createElement('td');
+    const addrSp = document.createElement('span');
+    addrSp.className   = 'address-cell';
+    addrSp.title       = r.address || '';
+    addrSp.textContent = r.address || '—';
+    addrTd.appendChild(addrSp);
+    tr.appendChild(addrTd);
+
+    // Jobs col
+    appendTd(tr, String(r.jobs), 'text-align:center;font-weight:600');
+
+    // Status col
+    const statTd = document.createElement('td');
+    statTd.appendChild(buildStatusPill(r.statuses));
+    tr.appendChild(statTd);
+
+    // Rec col
+    const recTd = document.createElement('td');
+    recTd.appendChild(buildRecChip(r.rec));
+    tr.appendChild(recTd);
+
+    // Action col
+    const actionTd = document.createElement('td');
+    if (decided) {
+      const lbl = document.createElement('span');
+      lbl.className   = 'decided-label dl-' + decided;
+      lbl.textContent = decided.toUpperCase();
+      const undoBtn = document.createElement('button');
+      undoBtn.className   = 'action-btn ab-undo';
+      undoBtn.textContent = 'Undo';
+      undoBtn.style.marginLeft = '6px';
+      undoBtn.dataset.name = r.dkwName;
+      undoBtn.addEventListener('click', handleUndo);
+      actionTd.appendChild(lbl);
+      actionTd.appendChild(undoBtn);
+    } else {
+      const div = document.createElement('div');
+      div.className = 'actions';
+      [
+        { action: 'inactivate', label: 'Inactivate', cls: 'ab-inactivate' },
+        { action: 'rename',     label: 'Rename',      cls: 'ab-rename'     },
+        { action: 'skip',       label: 'Skip',        cls: 'ab-skip'       },
+      ].forEach(({ action, label, cls }) => {
+        const btn = document.createElement('button');
+        btn.className       = 'action-btn ' + cls;
+        btn.textContent     = label;
+        btn.dataset.name    = r.dkwName;
+        btn.dataset.action  = action;
+        btn.addEventListener('click', handleDecide);
+        div.appendChild(btn);
+      });
+      actionTd.appendChild(div);
+    }
+    tr.appendChild(actionTd);
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.replaceChildren(table);
+}
+
+function appendTd(tr, text, style) {
+  const td = document.createElement('td');
+  td.textContent = text;
+  if (style) td.style.cssText = style;
+  tr.appendChild(td);
+}
+
+function buildStatusPill(statuses) {
+  const span = document.createElement('span');
+  span.className = 'status-pill';
+  if (!statuses || statuses.length === 0) {
+    span.textContent = '—';
+  } else if (statuses.length > 1) {
+    span.classList.add('sp-mixed');
+    span.textContent = 'Mixed (' + statuses.length + ')';
+  } else {
+    const s = statuses[0];
+    if (/scheduled/i.test(s)) span.classList.add('sp-scheduled');
+    else if (/complete/i.test(s)) span.classList.add('sp-complete');
+    else if (/paused/i.test(s)) span.classList.add('sp-paused');
+    span.textContent = s;
+  }
+  return span;
+}
+
+function buildRecChip(rec) {
+  const span = document.createElement('span');
+  span.className = 'rec rec-' + (rec || 'review');
+  span.textContent = rec || 'review';
+  return span;
+}
+
+// ── Event handlers ─────────────────────────────────────────────────────────
+function handleDecide(e) {
+  const name   = e.currentTarget.dataset.name;
+  const action = e.currentTarget.dataset.action;
+  S.decisions[name] = action;
+  renderAll();
+}
+
+function handleUndo(e) {
+  const name = e.currentTarget.dataset.name;
+  delete S.decisions[name];
+  renderAll();
+}
+
+// Tab switching
+document.getElementById('tabs').addEventListener('click', e => {
+  const tab = e.target.closest('[data-tab]');
+  if (!tab) return;
+  S.activeTab = tab.dataset.tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === S.activeTab));
+  show('bulk-inactivate-btn', S.activeTab === 'pairs');
+  show('bulk-rename-btn',     S.activeTab === 'orphans');
+  document.getElementById('search-box').value = '';
+  S.searchQuery = '';
+  renderTable();
+});
+
+// Search
+document.getElementById('search-box').addEventListener('input', e => {
+  S.searchQuery = e.target.value.toLowerCase();
+  renderTable();
+});
+
+// Bulk actions
+document.getElementById('bulk-inactivate-btn').addEventListener('click', () => bulkDecide('inactivate'));
+document.getElementById('bulk-rename-btn').addEventListener('click', () => bulkDecide('rename'));
+document.getElementById('bulk-skip-btn').addEventListener('click', () => bulkDecide('skip'));
+
+function bulkDecide(action) {
+  visibleRecords().filter(r => !S.decisions[r.dkwName]).forEach(r => { S.decisions[r.dkwName] = action; });
+  renderAll();
+}
+
+// Export
+document.getElementById('export-decided-btn').addEventListener('click', () => exportXlsx(false));
+document.getElementById('export-all-btn').addEventListener('click',     () => exportXlsx(true));
+
+function exportXlsx(includeAll) {
+  const records = includeAll ? allRecords() : allRecords().filter(r => S.decisions[r.dkwName] && S.decisions[r.dkwName] !== 'skip');
+  if (!records.length) { alert('No decided records to export.'); return; }
+
+  const rows = [['DKW Record Name', 'Action', 'Clean Counterpart / Rename To', 'Address', 'Jobs', 'Job Statuses', 'Recommendation', 'Notes']];
+  records.forEach(r => {
+    const action  = S.decisions[r.dkwName] || 'pending';
+    const matchTo = r.cleanName || r.suggestedName || '';
+    const note    = action === 'inactivate'
+      ? (r.cleanName ? 'Keep: ' + r.cleanName : 'Mark inactive — no clean counterpart')
+      : action === 'rename' ? 'Strip DKW- prefix → rename to: ' + (r.suggestedName || '')
+      : '';
+    rows.push([r.dkwName, action.toUpperCase(), matchTo, r.address, r.jobs, r.statuses.join(' | '), r.rec.toUpperCase(), note]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cleanup Actions');
+  XLSX.writeFile(wb, 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+// ── Verify Phase ───────────────────────────────────────────────────────────
+function verifyFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    runVerification(wb);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function runVerification(wb) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  let hi = -1;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    if (rows[i] && rows[i].some(c => c && String(c).toLowerCase().includes('customer'))) { hi = i; break; }
+  }
+  if (hi === -1) { alert('Could not parse verification file.'); return; }
+
+  const headers = rows[hi].map(h => h ? String(h).trim() : '');
+  const data    = rows.slice(hi + 1).filter(r => r && r.some(Boolean));
+  const custIdx = headers.findIndex(h => h.toLowerCase().includes('customer'));
+  const newNames = new Set(data.map(r => r[custIdx] ? String(r[custIdx]).trim() : '').filter(Boolean));
+
+  const results = [];
+  let pass = 0, fail = 0;
+
+  Object.entries(S.decisions).forEach(([name, action]) => {
+    if (action === 'inactivate') {
+      if (!newNames.has(name)) { pass++; results.push({ cls: 'vr-pass', icon: '✅', label: 'Inactivated', name, note: 'No longer appears in export.' }); }
+      else                     { fail++; results.push({ cls: 'vr-fail', icon: '❌', label: 'Still Active!', name, note: 'Record still present — check Service Fusion.' }); }
+    }
+    if (action === 'rename') {
+      const rec     = allRecords().find(r => r.dkwName === name);
+      const newName = rec ? (rec.suggestedName || rec.cleanName) : null;
+      const dkwGone = !newNames.has(name);
+      const found   = newName && newNames.has(newName);
+      if (dkwGone && found)  { pass++; results.push({ cls: 'vr-pass', icon: '✅', label: 'Renamed', name, note: '→ ' + (newName || '') + ' found ✓' }); }
+      else if (!dkwGone)     { fail++; results.push({ cls: 'vr-fail', icon: '❌', label: 'DKW Still Exists', name, note: 'DKW record still present — rename may not have saved.' }); }
+      else                   { results.push({ cls: 'vr-warn', icon: '⚠️', label: 'Partial', name, note: 'DKW gone but "' + (newName || '?') + '" not found — may be under a different name.' }); }
+    }
+  });
+
+  show('phase-worklist', false);
+  show('phase-verify', true);
+  document.getElementById('phase-badge').textContent = 'Phase 3: Verify';
+
+  setStatsBar('verify-stats', [
+    { cls: 'success', label: 'Passed', value: pass },
+    { cls: 'danger',  label: 'Failed', value: fail },
+    { cls: 'brand',   label: 'Total Checked', value: results.length },
+  ]);
+
+  const container = document.getElementById('verify-results');
+  container.replaceChildren();
+  results.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'verify-result ' + r.cls;
+    const h4 = document.createElement('h4');
+    h4.textContent = r.icon + ' ' + r.label + ': ' + r.name;
+    const p = document.createElement('p');
+    p.textContent = r.note;
+    div.appendChild(h4);
+    div.appendChild(p);
+    container.appendChild(div);
+  });
+}
+
+// ── Reset ──────────────────────────────────────────────────────────────────
+document.getElementById('reset-btn').addEventListener('click', () => {
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, activeTab: 'pairs', searchQuery: '' });
+  show('phase-upload', true);
+  show('phase-worklist', false);
+  show('phase-verify', false);
+  document.getElementById('phase-badge').textContent = 'Phase 1: Upload';
+  document.getElementById('file-input').value = '';
+  document.getElementById('verify-input').value = '';
+});
+</script>
+</body>
+</html>

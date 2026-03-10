@@ -137,10 +137,41 @@
     .verify-zone p { font-size: 13px; color: #4d7c0f; margin-bottom: 16px; }
     .verify-result { background: white; border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 20px; margin-bottom: 10px; border-left: 4px solid; }
     .vr-pass { border-color: #059669; }
-    .vr-fail { border-color: var(--danger); }
-    .vr-warn { border-color: var(--warn); }
+    .vr-fail { border-color: var(--warn); }
+    .vr-warn { border-color: var(--info); }
     .verify-result h4 { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
     .verify-result p { font-size: 12px; color: var(--text-muted); }
+    .verify-result .action-hint { font-size: 12px; color: var(--brand); font-weight: 600; margin-top: 6px; }
+    .verify-summary { background: white; border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 24px; }
+    .verify-summary h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+    .verify-summary p { font-size: 13px; color: var(--text-muted); margin-bottom: 4px; }
+    .verify-toggle { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--brand); background: none; border: none; padding: 8px 0; margin-top: 12px; }
+
+    .restore-banner { background: white; border-radius: var(--radius); box-shadow: var(--shadow-md); padding: 20px 24px; border-left: 4px solid var(--info); margin-bottom: 20px; position: relative; }
+    .restore-banner h3 { font-size: 15px; font-weight: 700; color: var(--info); margin-bottom: 10px; }
+    .restore-banner .restore-stats { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 10px; }
+    .restore-banner .restore-stat { font-size: 13px; }
+    .restore-banner .restore-stat strong { font-weight: 700; }
+    .restore-banner .restore-stat.added { color: var(--brand); }
+    .restore-banner .restore-stat.removed { color: var(--warn); }
+    .restore-banner .restore-stat.restored { color: var(--info); }
+    .restore-banner .dismiss-btn { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 18px; color: var(--text-muted); cursor: pointer; line-height: 1; }
+    .restore-banner .dismiss-btn:hover { color: var(--text); }
+
+    .territory-cell { min-width: 150px; }
+    .territory-select { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); font-size: 11px; background: white; cursor: pointer; width: 100%; transition: border-color .15s; }
+    .territory-select:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(26,92,58,.1); }
+    .territory-select.assigned { border-color: var(--brand); background: var(--brand-light); }
+    .territory-label { font-size: 10px; color: var(--brand); font-weight: 600; display: block; margin-top: 2px; }
+    .bulk-territory { padding: 6px 10px; border-radius: var(--radius); border: 1px solid var(--border); font-size: 12px; font-weight: 600; background: var(--brand-light); color: var(--brand); cursor: pointer; }
+
+    .help-content { padding: 32px 40px; max-width: 720px; line-height: 1.7; }
+    .help-content h3 { font-size: 16px; font-weight: 700; color: var(--brand); margin-bottom: 6px; margin-top: 28px; }
+    .help-content h3:first-child { margin-top: 0; }
+    .help-content p { font-size: 13px; color: var(--text); margin-bottom: 12px; }
+    .help-content ul { font-size: 13px; color: var(--text); margin: 0 0 12px 20px; }
+    .help-content li { margin-bottom: 6px; }
+    .help-content .note { font-size: 12px; color: var(--text-muted); font-style: italic; }
 
     .empty { text-align: center; padding: 48px 24px; color: var(--text-muted); }
     .empty .icon { font-size: 40px; margin-bottom: 12px; }
@@ -191,11 +222,13 @@
       </div>
       <button class="export-btn secondary" id="export-decided-btn">⬇ Export Decided</button>
       <button class="export-btn primary" id="export-all-btn">⬇ Export All</button>
+      <button class="export-btn secondary" id="export-samsara-btn">⬇ Samsara CSV</button>
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="pairs">✂️ Confirmed Pairs <span class="count" id="tab-pairs-count">0</span></button>
       <button class="tab" data-tab="orphans">🔍 Unmatched DKW <span class="count" id="tab-orphans-count">0</span></button>
       <button class="tab" data-tab="done">✅ Decided <span class="count" id="tab-done-count">0</span></button>
+      <button class="tab" data-tab="help" style="margin-left:auto">? Help</button>
     </div>
     <div class="panel">
       <div class="toolbar">
@@ -203,6 +236,7 @@
         <button class="bulk-btn inactivate" id="bulk-inactivate-btn">Inactivate All Visible</button>
         <button class="bulk-btn rename hidden" id="bulk-rename-btn">Rename All Visible</button>
         <button class="bulk-btn skip" id="bulk-skip-btn">Skip All Visible</button>
+        <select class="bulk-territory" id="bulk-territory-select"><option value="">Assign Territory&hellip;</option></select>
       </div>
       <div class="table-wrap" id="table-wrap"></div>
     </div>
@@ -217,8 +251,12 @@
   <!-- PHASE 3: VERIFY -->
   <div id="phase-verify" class="hidden">
     <div class="stats-bar" id="verify-stats"></div>
+    <div id="verify-summary" style="margin-bottom:16px"></div>
     <div id="verify-results"></div>
-    <button class="btn-primary" id="reset-btn" style="margin-bottom:24px">↩ Start New Session</button>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin:20px 0 24px">
+      <button class="btn-primary" id="back-to-worklist-btn">← Back to Worklist</button>
+      <button class="btn-primary" id="export-issues-btn" style="background:var(--warn);color:#000">Export Remaining Issues</button>
+    </div>
   </div>
 
 </div>
@@ -238,12 +276,13 @@ function txt(str) { return document.createTextNode(str == null ? '' : String(str
 
 // ── State ──────────────────────────────────────────────────────────────────
 const S = {
-  pairs:      [],   // {dkwName, cleanName, address, agent, acctNum, rec}
-  orphans:    [],   // {dkwName, suggestedName, address, agent, acctNum, rec}
-  decisions:  {},   // dkwName -> 'inactivate'|'rename'|'skip'
+  pairs:                [],   // {dkwName, cleanName, address, city, state, zip, agent, acctNum, rec}
+  orphans:              [],   // {dkwName, suggestedName, address, city, state, zip, agent, acctNum, rec}
+  decisions:            {},   // dkwName -> 'inactivate'|'rename'|'skip'
+  territories:          [],   // user-created territory names
+  territoryAssignments: {},   // dkwName -> territory name
   activeTab:  'pairs',
   searchQuery: '',
-  sessionKey:  null, // fingerprint of current dataset for localStorage matching
 };
 
 // ── Accessors ──────────────────────────────────────────────────────────────
@@ -259,7 +298,8 @@ function visibleRecords() {
   return records.filter(r =>
     r.dkwName.toLowerCase().includes(q) ||
     (r.cleanName && r.cleanName.toLowerCase().includes(q)) ||
-    (r.address && r.address.toLowerCase().includes(q))
+    (r.address && r.address.toLowerCase().includes(q)) ||
+    (S.territoryAssignments[r.dkwName] && S.territoryAssignments[r.dkwName].toLowerCase().includes(q))
   );
 }
 
@@ -360,9 +400,12 @@ function processWorkbook(wb) {
     const dkwName   = String(r[iName]).trim();
     const n         = norm(dkwName);
     const address   = buildAddress(r);
-    const agent     = r[iAgent]   ? String(r[iAgent]).trim()   : '';
-    const created   = r[iCreated] ? String(r[iCreated]).trim() : '';
-    const acctNum   = r[iAcctNum] ? String(r[iAcctNum]).trim() : '';
+    const city      = r[iCity]    ? String(r[iCity]).trim()     : '';
+    const state     = r[iState]   ? String(r[iState]).trim()    : '';
+    const zip       = r[iZip]     ? String(r[iZip]).trim()      : '';
+    const agent     = r[iAgent]   ? String(r[iAgent]).trim()    : '';
+    const created   = r[iCreated] ? String(r[iCreated]).trim()  : '';
+    const acctNum   = r[iAcctNum] ? String(r[iAcctNum]).trim()  : '';
     const suggested = dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
 
     if (cleanMap[n]) {
@@ -372,7 +415,7 @@ function processWorkbook(wb) {
         cleanName:  String(cr[iName]).trim(),
         cleanAgent: cr[iAgent]   ? String(cr[iAgent]).trim()   : '',
         cleanAcct:  cr[iAcctNum] ? String(cr[iAcctNum]).trim() : '',
-        address,
+        address, city, state, zip,
         agent,
         created,
         acctNum,
@@ -383,7 +426,7 @@ function processWorkbook(wb) {
         dkwName,
         suggestedName: suggested,
         cleanName: null,
-        address,
+        address, city, state, zip,
         agent,
         created,
         acctNum,
@@ -392,31 +435,106 @@ function processWorkbook(wb) {
     }
   });
 
-  // Compute a fingerprint for this dataset so saved decisions can be matched
-  S.sessionKey = `${S.pairs.length}:${S.orphans.length}:${(S.pairs[0] || S.orphans[0] || {}).dkwName || ''}`;
+  // Restore saved state by matching on dkwName (resilient across exports)
+  const currentNames = new Set(allRecords().map(r => r.dkwName));
+  const saved = loadSession();
+  let restoreSummary = null;
 
-  // Restore any previously saved decisions for this exact dataset
-  const saved = loadSession(S.sessionKey);
-  if (saved && Object.keys(saved).length > 0) {
-    S.decisions = saved;
-    showToast(`Restored ${Object.keys(saved).length} saved decisions from your last session.`);
+  if (saved) {
+    const prevNames = new Set(saved.dkwNames || []);
+    const hasPriorData = Object.keys(saved.decisions).length > 0 ||
+                         saved.territories.length > 0 ||
+                         Object.keys(saved.territoryAssignments).length > 0;
+
+    if (hasPriorData) {
+      // Restore territories (always kept — they're not record-specific)
+      S.territories = saved.territories;
+
+      // Stash ALL prior decisions/assignments so verify phase and persistence
+      // can reference decisions for records no longer in this export
+      S._priorDecisions = {};
+      S._priorTerritoryAssignments = {};
+
+      // Restore decisions only for records that exist in this export
+      let decisionsRestored = 0;
+      let decisionsDropped = 0;
+      Object.entries(saved.decisions).forEach(([name, decision]) => {
+        if (currentNames.has(name)) {
+          S.decisions[name] = decision;
+          decisionsRestored++;
+        } else {
+          S._priorDecisions[name] = decision;
+          decisionsDropped++;
+        }
+      });
+
+      // Restore territory assignments only for records that exist in this export
+      let terrRestored = 0;
+      let terrDropped = 0;
+      Object.entries(saved.territoryAssignments).forEach(([name, territory]) => {
+        if (currentNames.has(name)) {
+          S.territoryAssignments[name] = territory;
+          terrRestored++;
+        } else {
+          S._priorTerritoryAssignments[name] = territory;
+          terrDropped++;
+        }
+      });
+
+      // Compute delta summary
+      const recordsGone = [...prevNames].filter(n => !currentNames.has(n));
+      const recordsNew  = [...currentNames].filter(n => !prevNames.has(n));
+
+      restoreSummary = {
+        decisionsRestored,
+        decisionsDropped,
+        terrRestored,
+        terrDropped,
+        recordsGone: recordsGone.length,
+        recordsNew: recordsNew.length,
+        isNewExport: recordsGone.length > 0 || recordsNew.length > 0,
+      };
+    }
   }
 
   show('phase-upload', false);
   show('phase-worklist', true);
   show('header-reset-btn', true);
   document.getElementById('phase-badge').textContent = 'Step 2: Review Worklist';
+  persistState();
   renderAll();
+
+  // Show restore summary
+  if (restoreSummary) {
+    const s = restoreSummary;
+    if (s.isNewExport) {
+      showRestoreBanner(s);
+    } else if (s.decisionsRestored > 0 || s.terrRestored > 0) {
+      const parts = [];
+      if (s.decisionsRestored) parts.push(s.decisionsRestored + ' decisions');
+      if (s.terrRestored) parts.push(s.terrRestored + ' territory assignments');
+      showToast('Restored ' + parts.join(' and ') + ' from your last session.');
+    }
+  }
 }
 
 // ── Render: stats, progress, table ────────────────────────────────────────
-function renderAll() { renderStats(); renderProgress(); renderTable(); }
+function renderAll() { renderStats(); renderProgress(); renderTable(); renderBulkTerritorySelect(); }
 
 function renderStats() {
   const total      = allRecords().length;
   const decided    = Object.keys(S.decisions).length;
   const inactivate = Object.values(S.decisions).filter(d => d === 'inactivate').length;
   const rename     = Object.values(S.decisions).filter(d => d === 'rename').length;
+  const terrAssigned = Object.keys(S.territoryAssignments).length;
+
+  // Build territory breakdown for tooltip
+  const terrCounts = {};
+  Object.values(S.territoryAssignments).forEach(t => { terrCounts[t] = (terrCounts[t] || 0) + 1; });
+  const terrTip = Object.entries(terrCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([name, count]) => name + ': ' + count)
+    .join(', ') || 'No territories assigned yet';
 
   setStatsBar('stats-bar', [
     { cls: 'brand',   label: 'Total DKW Records',  value: total },
@@ -425,6 +543,7 @@ function renderStats() {
     { cls: 'info',    label: 'To Inactivate',       value: inactivate },
     { cls: 'warn',    label: 'To Rename',           value: rename },
     { cls: 'success', label: 'Decided',             value: decided },
+    { cls: 'brand',   label: 'Territories Assigned', value: terrAssigned, tip: terrTip },
   ]);
 
   const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
@@ -451,7 +570,7 @@ function setStatsBar(id, cards) {
   cards.forEach(c => {
     const card = document.createElement('div');
     card.className = 'stat-card ' + c.cls;
-    const tooltip = STAT_TOOLTIPS[c.label];
+    const tooltip = c.tip || STAT_TOOLTIPS[c.label];
     if (tooltip) card.dataset.tip = tooltip;
     const lbl = document.createElement('div');
     lbl.className = 'label';
@@ -479,6 +598,34 @@ function show(id, visible) { document.getElementById(id).classList.toggle('hidde
 // ── Table rendering (DOM-only, no innerHTML for user data) ─────────────────
 function renderTable() {
   const wrap    = document.getElementById('table-wrap');
+
+  if (S.activeTab === 'help') {
+    const div = document.createElement('div');
+    div.className = 'help-content';
+    div.innerHTML = [
+      '<h3>What this app does</h3>',
+      '<p>This tool reviews DKW-prefixed duplicate records from your Service Fusion export and helps you decide what to do with each one: inactivate the duplicate, rename it to strip the DKW prefix, or skip it for now. When you are done, export an action list for your team to work through in Service Fusion.</p>',
+      '<h3>Your data stays local</h3>',
+      '<p>Everything runs in your browser. No data is uploaded to any server. Your decisions and territory assignments are saved automatically in your browser\'s local storage.</p>',
+      '<h3>Picking up where you left off</h3>',
+      '<p>When you upload the same or an updated export, the app restores your previous decisions and territory assignments automatically. If the export has changed (records added or removed), a banner shows what carried forward.</p>',
+      '<h3>Territory assignment</h3>',
+      '<p>Assign territories to locations using the dropdown in each row. Create new territories with the "+ New Territory" option. The app suggests territories for unassigned locations based on zip code and city proximity to locations you have already assigned.</p>',
+      '<h3>Exports</h3>',
+      '<ul>',
+      '<li><strong>Export Decided</strong> — only records you have made decisions on (excludes skipped)</li>',
+      '<li><strong>Export All</strong> — all records with their current status</li>',
+      '<li><strong>Samsara CSV</strong> — customer locations with territory tags formatted for Samsara import</li>',
+      '</ul>',
+      '<h3>Verify Cleanup</h3>',
+      '<p>After your team completes the actions in Service Fusion, upload a fresh SF export using the verify button at the bottom of the page to confirm changes were applied correctly.</p>',
+      '<h3>Reset</h3>',
+      '<p>The reset button in the header clears all saved data. This is the only way to lose your work (besides clearing your browser data).</p>',
+    ].join('\n');
+    wrap.replaceChildren(div);
+    return;
+  }
+
   const records = visibleRecords();
 
   if (records.length === 0) {
@@ -508,7 +655,7 @@ function renderTable() {
   const cols  = ['#', 'DKW Record',
     S.activeTab === 'pairs'   ? 'Clean Counterpart'  :
     S.activeTab === 'orphans' ? 'Suggested Rename'   : 'Match / Rename',
-    'Address', 'Agent / Territory', 'Acct #', 'Action'];
+    'Address', 'Territory', 'Acct #', 'Action'];
   cols.forEach(c => {
     const th = document.createElement('th');
     th.textContent = c;
@@ -571,8 +718,11 @@ function renderTable() {
     addrTd.appendChild(addrSp);
     tr.appendChild(addrTd);
 
-    // Agent / Territory col
-    appendTd(tr, r.agent || '—', 'font-size:12px;color:var(--text-muted);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap');
+    // Territory selector col
+    const terrTd = document.createElement('td');
+    terrTd.className = 'territory-cell';
+    terrTd.appendChild(buildTerritorySelector(r));
+    tr.appendChild(terrTd);
 
     // Acct # col
     appendTd(tr, r.acctNum || '—', 'font-size:12px;color:var(--text-muted);text-align:center');
@@ -649,19 +799,192 @@ function buildRecChip(rec) {
   return span;
 }
 
+// ── Territory: proximity recommendation engine ─────────────────────────────
+let _territoryCache = null;
+let _territoryCacheKey = '';
+
+function buildTerritoryFrequencyMap() {
+  const cacheKey = JSON.stringify(S.territoryAssignments);
+  if (_territoryCacheKey === cacheKey && _territoryCache) return _territoryCache;
+
+  const zipMap  = {};  // zip -> { territory: count }
+  const cityMap = {};  // "city|state" -> { territory: count }
+
+  allRecords().forEach(r => {
+    const territory = S.territoryAssignments[r.dkwName];
+    if (!territory) return;
+    if (r.zip) {
+      if (!zipMap[r.zip]) zipMap[r.zip] = {};
+      zipMap[r.zip][territory] = (zipMap[r.zip][territory] || 0) + 1;
+    }
+    if (r.city && r.state) {
+      const key = r.city.toLowerCase() + '|' + r.state.toLowerCase();
+      if (!cityMap[key]) cityMap[key] = {};
+      cityMap[key][territory] = (cityMap[key][territory] || 0) + 1;
+    }
+  });
+
+  _territoryCache = { zipMap, cityMap };
+  _territoryCacheKey = cacheKey;
+  return _territoryCache;
+}
+
+function getRecommendedTerritory(record) {
+  if (S.territoryAssignments[record.dkwName]) return null; // already assigned
+  if (S.territories.length === 0) return null;
+
+  const { zipMap, cityMap } = buildTerritoryFrequencyMap();
+
+  // Try zip first
+  if (record.zip && zipMap[record.zip]) {
+    const entries = Object.entries(zipMap[record.zip]);
+    entries.sort((a, b) => b[1] - a[1]);
+    if (entries.length > 0) return entries[0][0];
+  }
+
+  // Fall back to city+state
+  if (record.city && record.state) {
+    const key = record.city.toLowerCase() + '|' + record.state.toLowerCase();
+    if (cityMap[key]) {
+      const entries = Object.entries(cityMap[key]);
+      entries.sort((a, b) => b[1] - a[1]);
+      if (entries.length > 0) return entries[0][0];
+    }
+  }
+
+  return null;
+}
+
+// ── Territory: selector component ──────────────────────────────────────────
+function buildTerritorySelector(record) {
+  const container = document.createElement('div');
+  container.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:140px';
+
+  const select = document.createElement('select');
+  select.className = 'territory-select';
+  select.dataset.name = record.dkwName;
+  select.addEventListener('change', handleTerritoryChange);
+
+  const current = S.territoryAssignments[record.dkwName] || '';
+  const recommended = getRecommendedTerritory(record);
+
+  if (current) select.classList.add('assigned');
+
+  // Placeholder
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '\u2014 assign \u2014';
+  placeholder.selected = !current;
+  select.appendChild(placeholder);
+
+  // Recommended option (if exists and not already assigned)
+  if (recommended) {
+    const recOpt = document.createElement('option');
+    recOpt.value = recommended;
+    recOpt.textContent = '\u2605 ' + recommended + ' (suggested)';
+    select.appendChild(recOpt);
+  }
+
+  // All territories
+  S.territories.forEach(t => {
+    // Skip if already shown as recommendation
+    if (t === recommended) return;
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    opt.selected = (t === current);
+    select.appendChild(opt);
+  });
+
+  // + New Territory
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__';
+  newOpt.textContent = '+ New Territory\u2026';
+  select.appendChild(newOpt);
+
+  // If recommended is the current, select it
+  if (current && current === recommended) {
+    select.value = current;
+  } else if (current) {
+    select.value = current;
+  }
+
+  container.appendChild(select);
+
+  // Show assignment label
+  if (current) {
+    const label = document.createElement('span');
+    label.className = 'territory-label';
+    label.textContent = '\u2713 ' + current;
+    container.appendChild(label);
+  }
+
+  return container;
+}
+
+function handleTerritoryChange(e) {
+  const name = e.target.dataset.name;
+  const value = e.target.value;
+
+  if (value === '__new__') {
+    const newName = prompt('Enter new territory name:');
+    if (newName && newName.trim()) {
+      const trimmed = newName.trim();
+      if (!S.territories.includes(trimmed)) {
+        S.territories.push(trimmed);
+        S.territories.sort();
+      }
+      S.territoryAssignments[name] = trimmed;
+    }
+    e.target.value = S.territoryAssignments[name] || '';
+  } else if (value === '') {
+    delete S.territoryAssignments[name];
+  } else {
+    S.territoryAssignments[name] = value;
+  }
+
+  persistState();
+  renderAll();
+}
+
+// ── Territory: bulk assign dropdown ────────────────────────────────────────
+function renderBulkTerritorySelect() {
+  const select = document.getElementById('bulk-territory-select');
+  select.replaceChildren();
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = 'Assign Territory\u2026';
+  placeholder.disabled = true;
+  placeholder.selected = true;
+  select.appendChild(placeholder);
+
+  S.territories.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    select.appendChild(opt);
+  });
+
+  const newOpt = document.createElement('option');
+  newOpt.value = '__new__';
+  newOpt.textContent = '+ New Territory\u2026';
+  select.appendChild(newOpt);
+}
+
 // ── Event handlers ─────────────────────────────────────────────────────────
 function handleDecide(e) {
   const name   = e.currentTarget.dataset.name;
   const action = e.currentTarget.dataset.action;
   S.decisions[name] = action;
-  saveSession(S.sessionKey, S.decisions);
+  persistState();
   renderAll();
 }
 
 function handleUndo(e) {
   const name = e.currentTarget.dataset.name;
   delete S.decisions[name];
-  saveSession(S.sessionKey, S.decisions);
+  persistState();
   renderAll();
 }
 
@@ -671,6 +994,8 @@ document.getElementById('tabs').addEventListener('click', e => {
   if (!tab) return;
   S.activeTab = tab.dataset.tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === S.activeTab));
+  const isHelp = S.activeTab === 'help';
+  document.querySelector('.toolbar').classList.toggle('hidden', isHelp);
   show('bulk-inactivate-btn', S.activeTab === 'pairs');
   show('bulk-rename-btn',     S.activeTab === 'orphans');
   document.getElementById('search-box').value = '';
@@ -691,28 +1016,65 @@ document.getElementById('bulk-skip-btn').addEventListener('click', () => bulkDec
 
 function bulkDecide(action) {
   visibleRecords().filter(r => !S.decisions[r.dkwName]).forEach(r => { S.decisions[r.dkwName] = action; });
-  saveSession(S.sessionKey, S.decisions);
+  persistState();
   renderAll();
 }
+
+// Bulk territory assignment
+document.getElementById('bulk-territory-select').addEventListener('change', e => {
+  let territory = e.target.value;
+  if (territory === '__new__') {
+    const name = prompt('Enter new territory name:');
+    if (!name || !name.trim()) { e.target.value = ''; return; }
+    territory = name.trim();
+    if (!S.territories.includes(territory)) {
+      S.territories.push(territory);
+      S.territories.sort();
+    }
+  }
+  if (!territory) return;
+
+  const visible = visibleRecords();
+  visible.forEach(r => { S.territoryAssignments[r.dkwName] = territory; });
+
+  persistState();
+  renderAll();
+  showToast('Assigned "' + territory + '" to ' + visible.length + ' visible records.');
+});
 
 // ── Session persistence (localStorage) ────────────────────────────────────
 const STORAGE_KEY = 'kw-cleanup-session';
 
-function saveSession(key, decisions) {
-  if (!key) return;
+function persistState() {
+  const dkwNames = allRecords().map(r => r.dkwName);
+  // Merge current decisions with any prior decisions for records no longer in this export
+  // so the verify phase can check ALL decisions, not just current-export ones
+  const allDecisions = Object.assign({}, S._priorDecisions || {}, S.decisions);
+  const allTerrAssignments = Object.assign({}, S._priorTerritoryAssignments || {}, S.territoryAssignments);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ key, decisions, savedAt: Date.now() }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      decisions: allDecisions,
+      territories: S.territories,
+      territoryAssignments: allTerrAssignments,
+      dkwNames,
+      savedAt: Date.now()
+    }));
   } catch (e) {
     // localStorage unavailable (private browsing with storage blocked) — silently skip
   }
 }
 
-function loadSession(key) {
+function loadSession() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const data = JSON.parse(raw);
-    return data.key === key ? data.decisions : null;
+    return {
+      decisions: data.decisions || {},
+      territories: data.territories || [],
+      territoryAssignments: data.territoryAssignments || {},
+      dkwNames: data.dkwNames || [],
+    };
   } catch (e) {
     return null;
   }
@@ -743,6 +1105,62 @@ function showToast(message) {
   setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 4000);
 }
 
+// ── Restore banner (shown when a different export is uploaded with prior state) ──
+function showRestoreBanner(summary) {
+  const existing = document.getElementById('restore-banner');
+  if (existing) existing.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'restore-banner';
+  banner.className = 'restore-banner';
+
+  const dismiss = document.createElement('button');
+  dismiss.className = 'dismiss-btn';
+  dismiss.textContent = '\u00d7';
+  dismiss.addEventListener('click', () => banner.remove());
+  banner.appendChild(dismiss);
+
+  const h3 = document.createElement('h3');
+  h3.textContent = 'Updated Export Detected';
+  banner.appendChild(h3);
+
+  const stats = document.createElement('div');
+  stats.className = 'restore-stats';
+
+  const items = [];
+  if (summary.decisionsRestored > 0)
+    items.push({ text: summary.decisionsRestored + ' decisions restored', cls: 'restored' });
+  if (summary.terrRestored > 0)
+    items.push({ text: summary.terrRestored + ' territory assignments restored', cls: 'restored' });
+  if (summary.recordsNew > 0)
+    items.push({ text: summary.recordsNew + ' new records', cls: 'added' });
+  if (summary.recordsGone > 0)
+    items.push({ text: summary.recordsGone + ' records cleaned up by your team (no longer in export)', cls: 'restored' });
+  if (summary.decisionsDropped > 0)
+    items.push({ text: summary.decisionsDropped + ' prior decisions archived (records already actioned)', cls: 'restored' });
+
+  items.forEach(item => {
+    const span = document.createElement('span');
+    span.className = 'restore-stat ' + item.cls;
+    const strong = document.createElement('strong');
+    strong.textContent = item.text.split(' ')[0];
+    span.appendChild(strong);
+    span.appendChild(document.createTextNode(' ' + item.text.split(' ').slice(1).join(' ')));
+    stats.appendChild(span);
+  });
+
+  banner.appendChild(stats);
+
+  const note = document.createElement('p');
+  note.style.cssText = 'font-size:12px;color:var(--text-muted);margin:0';
+  note.textContent = 'Your prior work has been carried forward. Only records present in this export are shown.';
+  banner.appendChild(note);
+
+  // Insert before the stats bar
+  const statsBar = document.getElementById('stats-bar');
+  statsBar.parentNode.insertBefore(banner, statsBar);
+}
+
 // Export
 document.getElementById('export-decided-btn').addEventListener('click', () => exportXlsx(false));
 document.getElementById('export-all-btn').addEventListener('click',     () => exportXlsx(true));
@@ -753,7 +1171,7 @@ function exportXlsx(includeAll) {
     : allRecords().filter(r => S.decisions[r.dkwName] && S.decisions[r.dkwName] !== 'skip');
   if (!records.length) { alert('No decided records to export.'); return; }
 
-  const HEADER = ['ACTION', 'DKW RECORD  (To Action)', 'CLEAN NAME  /  RENAME TO', 'ADDRESS', 'ACCT #', 'NOTES FOR TEAM'];
+  const HEADER = ['ACTION', 'DKW RECORD  (To Action)', 'CLEAN NAME  /  RENAME TO', 'ADDRESS', 'ACCT #', 'TERRITORY', 'NOTES FOR TEAM'];
 
   const dataRows = records.map(r => {
     const action    = (S.decisions[r.dkwName] || 'pending').toUpperCase();
@@ -765,7 +1183,7 @@ function exportXlsx(includeAll) {
       : action === 'RENAME'
       ? 'Edit name in SF \u2192 remove DKW prefix \u2192 rename to: ' + renameTo
       : 'No action needed';
-    return [action, r.dkwName, cleanTo, r.address || '', r.acctNum || '', note];
+    return [action, r.dkwName, cleanTo, r.address || '', r.acctNum || '', S.territoryAssignments[r.dkwName] || '', note];
   });
 
   const ws = XLSX.utils.aoa_to_sheet([HEADER, ...dataRows]);
@@ -777,6 +1195,7 @@ function exportXlsx(includeAll) {
     { wch: 32 },  // CLEAN NAME / RENAME TO
     { wch: 38 },  // ADDRESS
     { wch: 14 },  // ACCT #
+    { wch: 22 },  // TERRITORY
     { wch: 52 },  // NOTES FOR TEAM
   ];
 
@@ -844,6 +1263,43 @@ function exportXlsx(includeAll) {
     { cellStyles: true, bookSST: false, type: 'binary' });
 }
 
+// ── Samsara CSV Export ─────────────────────────────────────────────────────
+document.getElementById('export-samsara-btn').addEventListener('click', exportSamsaraCsv);
+
+function exportSamsaraCsv() {
+  const records = allRecords().filter(r =>
+    S.territoryAssignments[r.dkwName] && r.address
+  );
+  if (!records.length) {
+    alert('No records with territory assignments to export.\nAssign territories first, then export.');
+    return;
+  }
+
+  const rows = [['Name', 'Address', 'Radius', 'Tags', 'Notes', 'Type']];
+
+  records.forEach(r => {
+    const action = S.decisions[r.dkwName] || 'pending';
+    // Use the clean name — what the customer will be called after cleanup
+    let name;
+    if (action === 'rename') {
+      name = r.suggestedName || r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+    } else if (r.cleanName) {
+      name = r.cleanName;
+    } else {
+      name = r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+    }
+
+    const territory = S.territoryAssignments[r.dkwName];
+    rows.push([name, r.address, '250', territory, '', 'Customer']);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Samsara Import');
+  XLSX.writeFile(wb, 'KW_Samsara_Locations_' + new Date().toISOString().slice(0, 10) + '.csv',
+    { bookType: 'csv' });
+}
+
 // ── Verify Phase ───────────────────────────────────────────────────────────
 function verifyFile(file) {
   const reader = new FileReader();
@@ -868,22 +1324,42 @@ function runVerification(wb) {
   const custIdx = headers.findIndex(h => h.toLowerCase().includes('customer'));
   const newNames = new Set(data.map(r => r[custIdx] ? String(r[custIdx]).trim() : '').filter(Boolean));
 
-  const results = [];
-  let pass = 0, fail = 0;
+  const issues  = [];  // items that need attention
+  const passed  = [];  // items completed correctly
+  let passCount = 0, issueCount = 0;
 
-  Object.entries(S.decisions).forEach(([name, action]) => {
+  // Check ALL decisions — current export + prior exports (records already cleaned up)
+  const allDecisions = Object.assign({}, S._priorDecisions || {}, S.decisions);
+
+  Object.entries(allDecisions).forEach(([name, action]) => {
     if (action === 'inactivate') {
-      if (!newNames.has(name)) { pass++; results.push({ cls: 'vr-pass', icon: '✅', label: 'Inactivated', name, note: 'No longer appears in export.' }); }
-      else                     { fail++; results.push({ cls: 'vr-fail', icon: '❌', label: 'Still Active!', name, note: 'Record still present — check Service Fusion.' }); }
+      if (!newNames.has(name)) {
+        passCount++;
+        passed.push({ cls: 'vr-pass', icon: '\u2705', label: 'Done', name, note: 'Successfully removed from export.' });
+      } else {
+        issueCount++;
+        issues.push({ cls: 'vr-fail', icon: '\u26a0\ufe0f', label: 'Still needs attention', name, note: 'This DKW record is still active in Service Fusion.',
+          hint: 'Open Service Fusion \u2192 search for "' + name + '" \u2192 set status to Inactive.' });
+      }
     }
     if (action === 'rename') {
       const rec     = allRecords().find(r => r.dkwName === name);
-      const newName = rec ? (rec.suggestedName || rec.cleanName) : null;
+      const newName = rec
+        ? (rec.suggestedName || rec.cleanName || name.replace(/^DKW[\s\-\u2013]*/i, '').trim())
+        : name.replace(/^DKW[\s\-\u2013]*/i, '').trim();
       const dkwGone = !newNames.has(name);
       const found   = newName && newNames.has(newName);
-      if (dkwGone && found)  { pass++; results.push({ cls: 'vr-pass', icon: '✅', label: 'Renamed', name, note: '→ ' + (newName || '') + ' found ✓' }); }
-      else if (!dkwGone)     { fail++; results.push({ cls: 'vr-fail', icon: '❌', label: 'DKW Still Exists', name, note: 'DKW record still present — rename may not have saved.' }); }
-      else                   { results.push({ cls: 'vr-warn', icon: '⚠️', label: 'Partial', name, note: 'DKW gone but "' + (newName || '?') + '" not found — may be under a different name.' }); }
+      if (dkwGone && found)  {
+        passCount++;
+        passed.push({ cls: 'vr-pass', icon: '\u2705', label: 'Done', name, note: 'Renamed to ' + newName + ' \u2714' });
+      } else if (!dkwGone) {
+        issueCount++;
+        issues.push({ cls: 'vr-fail', icon: '\u26a0\ufe0f', label: 'Still needs attention', name, note: 'The DKW prefix hasn\u2019t been removed yet.',
+          hint: 'Open Service Fusion \u2192 search for "' + name + '" \u2192 rename to "' + newName + '".' });
+      } else {
+        issues.push({ cls: 'vr-warn', icon: '\ud83d\udd0d', label: 'Needs review', name, note: 'DKW name removed but "' + newName + '" wasn\u2019t found \u2014 may have been saved under a slightly different name.',
+          hint: 'Search Service Fusion for "' + newName + '" to confirm. No action needed if the customer exists under a similar name.' });
+      }
     }
   });
 
@@ -892,30 +1368,91 @@ function runVerification(wb) {
   document.getElementById('phase-badge').textContent = 'Step 3: Verify';
 
   setStatsBar('verify-stats', [
-    { cls: 'success', label: 'Passed', value: pass },
-    { cls: 'danger',  label: 'Failed', value: fail },
-    { cls: 'brand',   label: 'Total Checked', value: results.length },
+    { cls: 'success', label: 'Completed', value: passCount },
+    { cls: issueCount > 0 ? 'warn' : 'success',  label: 'Needs Attention', value: issueCount },
+    { cls: 'brand',   label: 'Total Checked', value: passCount + issueCount + issues.filter(r => r.cls === 'vr-warn').length },
   ]);
 
+  // Summary message
+  const summaryEl = document.getElementById('verify-summary');
+  summaryEl.replaceChildren();
+  const summaryDiv = document.createElement('div');
+  summaryDiv.className = 'verify-summary';
+  const h3 = document.createElement('h3');
+  if (issueCount === 0) {
+    h3.textContent = '\u2705 All changes verified \u2014 cleanup is complete!';
+    const p = document.createElement('p');
+    p.textContent = 'Every decision you made has been successfully applied in Service Fusion. No further action needed.';
+    summaryDiv.appendChild(h3);
+    summaryDiv.appendChild(p);
+  } else {
+    h3.textContent = issueCount + ' item' + (issueCount === 1 ? '' : 's') + ' still need' + (issueCount === 1 ? 's' : '') + ' attention';
+    const p = document.createElement('p');
+    p.textContent = 'Most of the cleanup is done! The items below were either missed or need a second look. Each one has instructions on what to do.';
+    summaryDiv.appendChild(h3);
+    summaryDiv.appendChild(p);
+  }
+  summaryEl.appendChild(summaryDiv);
+
+  // Render results: issues first, then passed (collapsed)
   const container = document.getElementById('verify-results');
   container.replaceChildren();
-  results.forEach(r => {
+
+  // Render issue items
+  issues.forEach(r => {
     const div = document.createElement('div');
     div.className = 'verify-result ' + r.cls;
-    const h4 = document.createElement('h4');
-    h4.textContent = r.icon + ' ' + r.label + ': ' + r.name;
+    const h4El = document.createElement('h4');
+    h4El.textContent = r.icon + ' ' + r.label + ': ' + r.name;
     const p = document.createElement('p');
     p.textContent = r.note;
-    div.appendChild(h4);
+    div.appendChild(h4El);
     div.appendChild(p);
+    if (r.hint) {
+      const hint = document.createElement('p');
+      hint.className = 'action-hint';
+      hint.textContent = '\u279c ' + r.hint;
+      div.appendChild(hint);
+    }
     container.appendChild(div);
   });
+
+  // Passed items — collapsible
+  if (passed.length > 0) {
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'verify-toggle';
+    toggleBtn.textContent = '\u25b6 Show ' + passed.length + ' completed item' + (passed.length === 1 ? '' : 's');
+    const passedWrap = document.createElement('div');
+    passedWrap.style.display = 'none';
+    passed.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'verify-result ' + r.cls;
+      const h4El = document.createElement('h4');
+      h4El.textContent = r.icon + ' ' + r.label + ': ' + r.name;
+      const p = document.createElement('p');
+      p.textContent = r.note;
+      div.appendChild(h4El);
+      div.appendChild(p);
+      passedWrap.appendChild(div);
+    });
+    toggleBtn.addEventListener('click', () => {
+      const open = passedWrap.style.display !== 'none';
+      passedWrap.style.display = open ? 'none' : 'block';
+      toggleBtn.textContent = (open ? '\u25b6 Show ' : '\u25bc Hide ') + passed.length + ' completed item' + (passed.length === 1 ? '' : 's');
+    });
+    container.appendChild(toggleBtn);
+    container.appendChild(passedWrap);
+  }
+
+  // Store issues for export
+  S._verifyIssues = issues;
+  show('export-issues-btn', issueCount > 0 || issues.length > 0);
 }
 
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, activeTab: 'pairs', searchQuery: '', sessionKey: null });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, activeTab: 'pairs', searchQuery: '' });
   show('phase-upload', true);
   show('phase-worklist', false);
   show('phase-verify', false);
@@ -925,7 +1462,32 @@ function doReset() {
   document.getElementById('verify-input').value = '';
 }
 
-document.getElementById('reset-btn').addEventListener('click', doReset);
+// Back to worklist from verify
+document.getElementById('back-to-worklist-btn').addEventListener('click', () => {
+  show('phase-verify', false);
+  show('phase-worklist', true);
+  document.getElementById('phase-badge').textContent = 'Step 2: Review & Decide';
+  document.getElementById('verify-input').value = '';
+});
+
+// Export remaining issues as xlsx
+document.getElementById('export-issues-btn').addEventListener('click', () => {
+  const issues = S._verifyIssues || [];
+  if (!issues.length) { alert('No issues to export.'); return; }
+  const HEADER = ['STATUS', 'CUSTOMER NAME', 'ISSUE', 'ACTION NEEDED'];
+  const dataRows = issues.map(r => [
+    r.label,
+    r.name,
+    r.note,
+    (r.hint || '').replace(/^\u279c\s*/, '')
+  ]);
+  const wsData = [HEADER, ...dataRows];
+  const wsNew  = XLSX.utils.aoa_to_sheet(wsData);
+  wsNew['!cols'] = [{ wch: 20 }, { wch: 40 }, { wch: 50 }, { wch: 60 }];
+  const wbNew  = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wbNew, wsNew, 'Remaining Issues');
+  XLSX.writeFile(wbNew, 'KW-Cleanup-Remaining-Issues.xlsx');
+});
 
 document.getElementById('header-reset-btn').addEventListener('click', () => {
   const decided = Object.keys(S.decisions).length;

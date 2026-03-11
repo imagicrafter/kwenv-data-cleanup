@@ -6,6 +6,10 @@ PASSWORD="${KW_APP_PASSWORD:?Set KW_APP_PASSWORD env var}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ── Step 0: Generate geodata from Supabase + KML ─────────────────────────
+echo "Generating geodata.js..."
+python3 generate_geodata.py
+
 # ── Step 1: Regenerate self-contained build ─────────────────────────────
 echo "Regenerating KW_DataCleanup.html..."
 python3 -c "
@@ -17,7 +21,11 @@ if not m: print('ERROR: Could not find inlined SheetJS block', file=sys.stderr);
 xlsx_block = m.group(1)
 cdn_tag = '<script src=\"https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js\"></script>'
 if cdn_tag not in new: print('ERROR: CDN tag not found in index.html', file=sys.stderr); sys.exit(1)
-with open('KW_DataCleanup.html','w') as f: f.write(new.replace(cdn_tag, xlsx_block))
+# Also inline geodata.js
+with open('geodata.js','r') as f: geodata = f.read()
+geodata_tag = '<script src=\"geodata.js\"></script>'
+result = new.replace(cdn_tag, xlsx_block).replace(geodata_tag, '<script>' + geodata + '</script>')
+with open('KW_DataCleanup.html','w') as f: f.write(result)
 print('  Done.')
 "
 

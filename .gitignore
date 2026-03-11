@@ -1,3 +1,4 @@
 node_modules/
 .env
 KW_DataCleanup.html
+geodata.js

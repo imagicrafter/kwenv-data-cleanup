@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KW Environmental — Customer List Cleanup Tool</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="geodata.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -161,9 +162,6 @@
     .territory-cell { min-width: 150px; }
     .territory-select { padding: 4px 6px; border-radius: 6px; border: 1px solid var(--border); font-size: 11px; background: white; cursor: pointer; width: 100%; transition: border-color .15s; }
     .territory-select:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(26,92,58,.1); }
-    .territory-select.assigned { border-color: var(--brand); background: var(--brand-light); }
-    .territory-label { font-size: 10px; color: var(--brand); font-weight: 600; display: block; margin-top: 2px; }
-    .bulk-territory { padding: 6px 10px; border-radius: var(--radius); border: 1px solid var(--border); font-size: 12px; font-weight: 600; background: var(--brand-light); color: var(--brand); cursor: pointer; }
 
     .help-content { padding: 32px 40px; max-width: 720px; line-height: 1.7; }
     .help-content h3 { font-size: 16px; font-weight: 700; color: var(--brand); margin-bottom: 6px; margin-top: 28px; }
@@ -178,6 +176,78 @@
     .btn-primary { background: var(--brand); color: white; border: none; border-radius: var(--radius); padding: 12px 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
     .btn-primary:hover { background: var(--brand-mid); }
     .hidden { display: none !important; }
+
+    .naming-bar { background: white; border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 16px; }
+    .naming-bar .naming-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); white-space: nowrap; }
+    .naming-bar label { font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .naming-bar input[type="radio"] { accent-color: var(--brand); }
+    .naming-bar .naming-example { font-size: 11px; color: var(--text-muted); font-family: monospace; }
+
+    .terr-manager { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .terr-pill { display: inline-flex; align-items: center; gap: 4px; background: var(--brand-light); color: var(--brand); border-radius: 99px; padding: 4px 10px 4px 12px; font-size: 12px; font-weight: 600; }
+    .terr-pill .terr-x { background: none; border: none; color: var(--brand); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; opacity: .6; }
+    .terr-pill .terr-x:hover { opacity: 1; }
+    .terr-add-btn { background: var(--brand-light); color: var(--brand); border: 1px dashed var(--brand); border-radius: 99px; padding: 4px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .terr-add-btn:hover { background: var(--brand); color: white; }
+    .terr-toolbar { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .zip-filter { width: 120px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-size: 13px; outline: none; }
+    .zip-filter:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(26,92,58,.1); }
+    .terr-assign-group { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+    .terr-assign-btn { padding: 8px 16px; border-radius: var(--radius); border: none; background: var(--brand); color: white; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .terr-assign-btn:hover { background: var(--brand-mid); }
+    .terr-assign-btn:disabled { opacity: .4; cursor: default; }
+    .terr-check { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
+    .terr-count { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+
+    /* Drivers & Vehicles tabs */
+    .driver-card, .vehicle-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 8px 16px; transition: box-shadow .15s; }
+    .driver-card:hover, .vehicle-card:hover { box-shadow: var(--shadow-md); }
+    .card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .card-header .card-name { font-size: 15px; font-weight: 700; flex: 1; }
+    .card-header .card-status { font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; }
+    .card-header .card-status.active { background: var(--brand-light); color: var(--brand); }
+    .card-header .card-status.inactive { background: var(--danger-light); color: var(--danger); }
+    .card-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; }
+    .card-field { display: flex; flex-direction: column; gap: 2px; }
+    .card-field .field-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); }
+    .card-field .field-value { font-size: 13px; }
+    .card-field input, .card-field select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; }
+    .card-field input:focus, .card-field select:focus { border-color: var(--brand); box-shadow: 0 0 0 2px rgba(26,92,58,.1); }
+    .card-field input.edited { border-color: var(--warn); background: var(--warn-light); }
+    .card-actions { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .card-actions button { padding: 6px 14px; border-radius: 6px; border: none; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .card-actions .save-btn { background: var(--brand); color: white; }
+    .card-actions .save-btn:hover { background: var(--brand-mid); }
+    .card-actions .delete-btn { background: var(--danger-light); color: var(--danger); }
+    .card-actions .delete-btn:hover { background: var(--danger); color: white; }
+    .tab-intro { padding: 16px 20px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 12px; }
+    .tab-intro .add-btn { margin-left: auto; padding: 6px 14px; border-radius: 6px; border: 1px dashed var(--brand); background: var(--brand-light); color: var(--brand); font-size: 12px; font-weight: 600; cursor: pointer; }
+    .tab-intro .add-btn:hover { background: var(--brand); color: white; }
+    .terr-driver-row { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: 1px solid var(--border); }
+    .terr-driver-row .terr-name { font-weight: 700; font-size: 13px; min-width: 200px; }
+    .terr-driver-row select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; min-width: 160px; }
+    .terr-driver-row .role-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); min-width: 60px; }
+
+    /* Samsara Sync tab */
+    .sync-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .sync-stat { text-align: center; }
+    .sync-stat .num { font-size: 24px; font-weight: 700; line-height: 1.2; }
+    .sync-stat .lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); letter-spacing: .5px; }
+    .sync-stat.match .num { color: #059669; }
+    .sync-stat.mismatch .num { color: var(--warn); }
+    .sync-stat.missing .num { color: var(--danger); }
+    .sync-stat.extra .num { color: var(--info); }
+    tr.row-match td { background: #f0fdf4; }
+    tr.row-mismatch td { background: var(--warn-light); }
+    tr.row-missing td { background: var(--danger-light); }
+    tr.row-extra td { background: var(--info-light); }
+    .diff-old { text-decoration: line-through; color: var(--danger); font-size: 11px; }
+    .diff-new { color: var(--brand); font-weight: 600; font-size: 11px; }
+    .sync-legend { padding: 12px 20px; display: flex; gap: 16px; font-size: 11px; border-bottom: 1px solid var(--border); }
+    .sync-legend span { display: flex; align-items: center; gap: 4px; }
+    .sync-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .sync-filter-bar { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+    .sync-filter-bar select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -215,6 +285,11 @@
       </div>
       <div class="progress-bar"><div class="progress-fill" id="progress-fill" style="width:0%"></div></div>
     </div>
+    <div class="naming-bar hidden" id="naming-bar">
+      <span class="naming-label">Naming Standard:</span>
+      <label><input type="radio" name="naming-std" value="dkw" checked /> DKW Format <span class="naming-example">Applebee's #1025138</span></label>
+      <label><input type="radio" name="naming-std" value="sf" /> SF Format <span class="naming-example">APPLEBEES -1025138</span></label>
+    </div>
     <div class="export-bar">
       <div class="export-info">
         <h3>Export Confirmed Actions</h3>
@@ -222,12 +297,18 @@
       </div>
       <button class="export-btn secondary" id="export-decided-btn">⬇ Export Decided</button>
       <button class="export-btn primary" id="export-all-btn">⬇ Export All</button>
-      <button class="export-btn secondary" id="export-samsara-btn">⬇ Samsara CSV</button>
+      <button class="export-btn secondary" id="export-samsara-btn">⬇ Samsara Export</button>
+      <button class="export-btn secondary" id="import-samsara-btn">⬆ Samsara Import</button>
+      <input type="file" id="samsara-import-input" accept=".xlsx,.csv" style="display:none" />
     </div>
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="pairs">✂️ Confirmed Pairs <span class="count" id="tab-pairs-count">0</span></button>
       <button class="tab" data-tab="orphans">🔍 Unmatched DKW <span class="count" id="tab-orphans-count">0</span></button>
       <button class="tab" data-tab="done">✅ Decided <span class="count" id="tab-done-count">0</span></button>
+      <button class="tab" data-tab="territories">📍 Territories <span class="count" id="tab-territories-count">0</span></button>
+      <button class="tab" data-tab="drivers">👤 Drivers <span class="count" id="tab-drivers-count">0</span></button>
+      <button class="tab" data-tab="vehicles">🚛 Vehicles <span class="count" id="tab-vehicles-count">0</span></button>
+      <button class="tab hidden" data-tab="samsara-sync" id="tab-samsara-sync">⚡ Samsara Sync <span class="count" id="tab-samsara-sync-count">0</span></button>
       <button class="tab" data-tab="help" style="margin-left:auto">? Help</button>
     </div>
     <div class="panel">
@@ -236,7 +317,6 @@
         <button class="bulk-btn inactivate" id="bulk-inactivate-btn">Inactivate All Visible</button>
         <button class="bulk-btn rename hidden" id="bulk-rename-btn">Rename All Visible</button>
         <button class="bulk-btn skip" id="bulk-skip-btn">Skip All Visible</button>
-        <select class="bulk-territory" id="bulk-territory-select"><option value="">Assign Territory&hellip;</option></select>
       </div>
       <div class="table-wrap" id="table-wrap"></div>
     </div>
@@ -281,9 +361,22 @@ const S = {
   decisions:            {},   // dkwName -> 'inactivate'|'rename'|'skip'
   territories:          [],   // user-created territory names
   territoryAssignments: {},   // dkwName -> territory name
+  namingStandard: 'dkw',     // 'dkw' = DKW format (Title Case), 'sf' = SF format (as-is from clean record)
+  drivers:          [],      // [{id, name, phone, status, notes}]
+  vehicles:         [],      // [{id, name, make, model, year, capacity, vin, status, assignedDriverId, notes}]
+  territoryDrivers: {},      // territory name -> {primary: driverId, backup: driverId}
   activeTab:  'pairs',
   searchQuery: '',
+  _territorySelected: new Set(),
+  _zipFilter: '',
+  _territoryFilter: '',
+  _samsaraImport: null,  // parsed Samsara export data: [{name, address, lat, lng, tags, type, ...}]
+  _syncFilter: '',       // '', 'match', 'mismatch', 'missing', 'extra'
 };
+
+// ── Normalize name — strips DKW prefix, removes non-alphanumeric, uppercases
+const norm = name =>
+  name.replace(/^DKW[\s\-\u2013]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
 // ── Accessors ──────────────────────────────────────────────────────────────
 function allRecords() { return [...S.pairs, ...S.orphans]; }
@@ -378,9 +471,6 @@ function processWorkbook(wb) {
       .filter(Boolean).map(v => String(v).trim()).join(', ');
   }
 
-  const norm = name =>
-    name.replace(/^DKW[\s\-\u2013]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-
   const dkwRows   = data.filter(r => /^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
   const cleanRows = data.filter(r => !/^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
 
@@ -447,8 +537,15 @@ function processWorkbook(wb) {
                          Object.keys(saved.territoryAssignments).length > 0;
 
     if (hasPriorData) {
-      // Restore territories (always kept — they're not record-specific)
+      // Restore territories and naming standard (always kept — they're not record-specific)
       S.territories = saved.territories;
+      S.namingStandard = saved.namingStandard || 'dkw';
+      if (saved.drivers && saved.drivers.length > 0) S.drivers = saved.drivers;
+      if (saved.vehicles && saved.vehicles.length > 0) S.vehicles = saved.vehicles;
+      if (saved.territoryDrivers) S.territoryDrivers = saved.territoryDrivers;
+      document.querySelectorAll('input[name="naming-std"]').forEach(r => {
+        r.checked = r.value === S.namingStandard;
+      });
 
       // Stash ALL prior decisions/assignments so verify phase and persistence
       // can reference decisions for records no longer in this export
@@ -497,6 +594,31 @@ function processWorkbook(wb) {
     }
   }
 
+  // Auto-assign territories from embedded geodata (point-in-polygon pre-computed)
+  if (typeof GEODATA !== 'undefined' && GEODATA && GEODATA.locations) {
+    GEODATA.territories.forEach(t => {
+      if (!S.territories.includes(t)) S.territories.push(t);
+    });
+    S.territories.sort();
+
+    let autoAssigned = 0;
+    allRecords().forEach(r => {
+      if (S.territoryAssignments[r.dkwName]) return;
+      const n = norm(r.dkwName);
+      const geo = GEODATA.locations[n];
+      if (geo && geo.t) {
+        S.territoryAssignments[r.dkwName] = geo.t;
+        autoAssigned++;
+      }
+    });
+    if (autoAssigned > 0) {
+      showToast(autoAssigned + ' customers auto-assigned to territories from location data.');
+    }
+  }
+
+  // Seed driver and vehicle data from Samsara
+  seedFleetData();
+
   show('phase-upload', false);
   show('phase-worklist', true);
   show('header-reset-btn', true);
@@ -519,7 +641,7 @@ function processWorkbook(wb) {
 }
 
 // ── Render: stats, progress, table ────────────────────────────────────────
-function renderAll() { renderStats(); renderProgress(); renderTable(); renderBulkTerritorySelect(); }
+function renderAll() { renderStats(); renderProgress(); renderTable(); }
 
 function renderStats() {
   const total      = allRecords().length;
@@ -549,10 +671,20 @@ function renderStats() {
   const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
   const orphansRemaining = S.orphans.filter(r => !S.decisions[r.dkwName]).length;
 
-  setText('tab-pairs-count',   pairsRemaining);
-  setText('tab-orphans-count', orphansRemaining);
-  setText('tab-done-count',    decided);
+  const unassigned = allRecords().filter(r =>
+    S.decisions[r.dkwName] !== 'inactivate' && !S.territoryAssignments[r.dkwName]
+  ).length;
+
+  setText('tab-pairs-count',       pairsRemaining);
+  setText('tab-orphans-count',     orphansRemaining);
+  setText('tab-done-count',        decided);
+  setText('tab-territories-count', unassigned);
+  setText('tab-drivers-count', S.drivers.length);
+  setText('tab-vehicles-count', S.vehicles.length);
   setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
+
+  // Show naming bar only when there are pairs (naming standard matters for pairs with clean counterparts)
+  show('naming-bar', S.pairs.length > 0);
 }
 
 const STAT_TOOLTIPS = {
@@ -599,28 +731,75 @@ function show(id, visible) { document.getElementById(id).classList.toggle('hidde
 function renderTable() {
   const wrap    = document.getElementById('table-wrap');
 
+  if (S.activeTab === 'territories') {
+    renderTerritoryTab();
+    return;
+  }
+
+  if (S.activeTab === 'drivers') {
+    renderDriversTab();
+    return;
+  }
+
+  if (S.activeTab === 'vehicles') {
+    renderVehiclesTab();
+    return;
+  }
+
+  if (S.activeTab === 'samsara-sync') {
+    renderSamsaraSyncTab();
+    return;
+  }
+
   if (S.activeTab === 'help') {
     const div = document.createElement('div');
     div.className = 'help-content';
     div.innerHTML = [
       '<h3>What this app does</h3>',
-      '<p>This tool reviews DKW-prefixed duplicate records from your Service Fusion export and helps you decide what to do with each one: inactivate the duplicate, rename it to strip the DKW prefix, or skip it for now. When you are done, export an action list for your team to work through in Service Fusion.</p>',
+      '<p>This tool helps clean up and organize your KW Environmental fleet data for import into Fleetillo. Upload your Service Fusion customer list export to review DKW-prefixed duplicate records, assign territories, manage drivers and vehicles, and export everything ready for the Samsara API.</p>',
+
       '<h3>Your data stays local</h3>',
-      '<p>Everything runs in your browser. No data is uploaded to any server. Your decisions and territory assignments are saved automatically in your browser\'s local storage.</p>',
+      '<p>Everything runs in your browser. No data is uploaded to any server. Your decisions, territory assignments, driver info, and vehicle data are saved automatically in your browser\'s local storage.</p>',
+
       '<h3>Picking up where you left off</h3>',
-      '<p>When you upload the same or an updated export, the app restores your previous decisions and territory assignments automatically. If the export has changed (records added or removed), a banner shows what carried forward.</p>',
-      '<h3>Territory assignment</h3>',
-      '<p>Assign territories to locations using the dropdown in each row. Create new territories with the "+ New Territory" option. The app suggests territories for unassigned locations based on zip code and city proximity to locations you have already assigned.</p>',
+      '<p>When you upload the same or an updated export, the app restores all your previous work automatically. If the export has changed (records added or removed), a banner shows what carried forward.</p>',
+
+      '<h3>Tabs overview</h3>',
+      '<ul>',
+      '<li><strong>Confirmed Pairs</strong> — DKW records that have a matching clean customer record. Decide to inactivate, rename, or skip each one.</li>',
+      '<li><strong>Unmatched DKW</strong> — DKW records with no clean counterpart. Rename them, mark inactive, or skip for now.</li>',
+      '<li><strong>Decided</strong> — All records you\'ve already made decisions on. Undo any decision from here.</li>',
+      '<li><strong>Territories</strong> — Assign customer locations to territories. Territories and assignments are auto-populated from your Google My Maps KML data and geocoded locations. Filter by territory or zip code, select rows, and click "Assign Selected".</li>',
+      '<li><strong>Drivers</strong> — Review and edit driver information from Samsara. Update names, phone numbers, or status. At the bottom, assign a primary and backup driver to each territory.</li>',
+      '<li><strong>Vehicles</strong> — Confirm vehicle fleet information. Edit names, review make/model/VIN, and assign a driver to each vehicle.</li>',
+      '<li><strong>Samsara Sync</strong> — After importing addresses to Samsara, upload the Samsara address export here to compare against app data and troubleshoot any mismatches. This tab appears after your first Samsara import.</li>',
+      '</ul>',
+
+      '<h3>Naming standard</h3>',
+      '<p>The naming standard selector (above the tabs) controls how customer names appear when renaming. <strong>DKW Format</strong> uses the original DKW formatting (Title Case with punctuation like Applebee\'s #1025138). <strong>SF Format</strong> uses the clean record format as-is from Service Fusion. This setting also affects exported names.</p>',
+
       '<h3>Exports</h3>',
       '<ul>',
-      '<li><strong>Export Decided</strong> — only records you have made decisions on (excludes skipped)</li>',
-      '<li><strong>Export All</strong> — all records with their current status</li>',
-      '<li><strong>Samsara CSV</strong> — customer locations with territory tags formatted for Samsara import</li>',
+      '<li><strong>Export Decided</strong> — Only records you\'ve made decisions on (excludes skipped). Use this to share the action list with your team for Service Fusion cleanup.</li>',
+      '<li><strong>Export All</strong> — All records with their current status, including undecided.</li>',
+      '<li><strong>Samsara Export</strong> — Multi-sheet XLSX with 5 tabs: Addresses (customer locations with lat/lng, territory/driver/vehicle tags), Drivers, Vehicles, Territories (with primary and backup driver assignments), and Territory Polygons (KML vertex data for creating polygon geofences via the Samsara API).</li>',
+      '<li><strong>Samsara Import</strong> — Upload a Samsara address export to compare against your app data in the Samsara Sync tab.</li>',
       '</ul>',
-      '<h3>Verify Cleanup</h3>',
-      '<p>After your team completes the actions in Service Fusion, upload a fresh SF export using the verify button at the bottom of the page to confirm changes were applied correctly.</p>',
+
+      '<h3>Auto-populated data</h3>',
+      '<p>When you upload an export, the app automatically:</p>',
+      '<ul>',
+      '<li>Loads 11 territory boundaries from your Google My Maps KML file</li>',
+      '<li>Matches ~858 customer locations to territories using geocoded coordinates</li>',
+      '<li>Pre-loads 8 drivers from your Samsara account with known territory assignments</li>',
+      '<li>Pre-loads 11 vehicles from your Samsara fleet with driver assignments</li>',
+      '</ul>',
+
+      '<h3>Verify cleanup</h3>',
+      '<p>After your team completes the actions in Service Fusion, upload a fresh SF export using the verify button at the bottom of the page to confirm changes were applied correctly. The verification compares your decisions against the new export and flags anything still outstanding.</p>',
+
       '<h3>Reset</h3>',
-      '<p>The reset button in the header clears all saved data. This is the only way to lose your work (besides clearing your browser data).</p>',
+      '<p>The reset button in the header clears all saved data including decisions, territories, drivers, and vehicles. This is the only way to lose your work (besides clearing your browser data).</p>',
     ].join('\n');
     wrap.replaceChildren(div);
     return;
@@ -655,7 +834,7 @@ function renderTable() {
   const cols  = ['#', 'DKW Record',
     S.activeTab === 'pairs'   ? 'Clean Counterpart'  :
     S.activeTab === 'orphans' ? 'Suggested Rename'   : 'Match / Rename',
-    'Address', 'Territory', 'Acct #', 'Action'];
+    'Address', 'Acct #', 'Action'];
   cols.forEach(c => {
     const th = document.createElement('th');
     th.textContent = c;
@@ -717,12 +896,6 @@ function renderTable() {
     addrSp.textContent = r.address || '—';
     addrTd.appendChild(addrSp);
     tr.appendChild(addrTd);
-
-    // Territory selector col
-    const terrTd = document.createElement('td');
-    terrTd.className = 'territory-cell';
-    terrTd.appendChild(buildTerritorySelector(r));
-    tr.appendChild(terrTd);
 
     // Acct # col
     appendTd(tr, r.acctNum || '—', 'font-size:12px;color:var(--text-muted);text-align:center');
@@ -855,121 +1028,1025 @@ function getRecommendedTerritory(record) {
   return null;
 }
 
-// ── Territory: selector component ──────────────────────────────────────────
-function buildTerritorySelector(record) {
-  const container = document.createElement('div');
-  container.style.cssText = 'display:flex;flex-direction:column;gap:2px;min-width:140px';
+// ── Naming standard: get the display name based on selected standard ────
+function getDisplayName(record) {
+  const stripped = record.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+  if (S.namingStandard === 'sf' && record.cleanName) {
+    return record.cleanName;
+  }
+  return record.suggestedName || stripped;
+}
 
-  const select = document.createElement('select');
-  select.className = 'territory-select';
-  select.dataset.name = record.dkwName;
-  select.addEventListener('change', handleTerritoryChange);
+// ── Territory tab rendering ─────────────────────────────────────────────
+function renderTerritoryTab() {
+  const wrap = document.getElementById('table-wrap');
+  wrap.replaceChildren();
 
-  const current = S.territoryAssignments[record.dkwName] || '';
-  const recommended = getRecommendedTerritory(record);
+  // Territory manager: pills + add button
+  const manager = document.createElement('div');
+  manager.className = 'terr-manager';
+  S.territories.forEach(t => {
+    const pill = document.createElement('span');
+    pill.className = 'terr-pill';
+    pill.appendChild(txt(t));
+    const x = document.createElement('button');
+    x.className = 'terr-x';
+    x.textContent = '\u00d7';
+    x.addEventListener('click', () => {
+      if (!confirm('Remove territory "' + t + '"? Assignments will be cleared.')) return;
+      S.territories = S.territories.filter(n => n !== t);
+      Object.keys(S.territoryAssignments).forEach(k => {
+        if (S.territoryAssignments[k] === t) delete S.territoryAssignments[k];
+      });
+      persistState();
+      renderAll();
+    });
+    pill.appendChild(x);
+    manager.appendChild(pill);
+  });
+  const addBtn = document.createElement('button');
+  addBtn.className = 'terr-add-btn';
+  addBtn.textContent = '+ New Territory';
+  addBtn.addEventListener('click', () => {
+    const name = prompt('Enter new territory name:');
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    if (!S.territories.includes(trimmed)) {
+      S.territories.push(trimmed);
+      S.territories.sort();
+      persistState();
+      renderAll();
+    }
+  });
+  manager.appendChild(addBtn);
+  wrap.appendChild(manager);
 
-  if (current) select.classList.add('assigned');
+  // Get records: all NOT inactivated
+  let records = allRecords().filter(r => S.decisions[r.dkwName] !== 'inactivate');
 
-  // Placeholder
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = '\u2014 assign \u2014';
-  placeholder.selected = !current;
-  select.appendChild(placeholder);
-
-  // Recommended option (if exists and not already assigned)
-  if (recommended) {
-    const recOpt = document.createElement('option');
-    recOpt.value = recommended;
-    recOpt.textContent = '\u2605 ' + recommended + ' (suggested)';
-    select.appendChild(recOpt);
+  // Apply filters
+  if (S._territoryFilter) {
+    if (S._territoryFilter === '__unassigned__') {
+      records = records.filter(r => !S.territoryAssignments[r.dkwName]);
+    } else {
+      records = records.filter(r => S.territoryAssignments[r.dkwName] === S._territoryFilter);
+    }
+  }
+  if (S._zipFilter) {
+    records = records.filter(r => r.zip && r.zip.startsWith(S._zipFilter));
   }
 
-  // All territories
+  // Toolbar: zip filter + count + assign group
+  const toolbar = document.createElement('div');
+  toolbar.className = 'terr-toolbar';
+
+  const terrFilter = document.createElement('select');
+  terrFilter.className = 'territory-select';
+  terrFilter.style.width = '160px';
+  const allOpt = document.createElement('option');
+  allOpt.value = '';
+  allOpt.textContent = 'All Territories';
+  terrFilter.appendChild(allOpt);
+  const unOpt = document.createElement('option');
+  unOpt.value = '__unassigned__';
+  unOpt.textContent = 'Unassigned';
+  terrFilter.appendChild(unOpt);
   S.territories.forEach(t => {
-    // Skip if already shown as recommendation
-    if (t === recommended) return;
     const opt = document.createElement('option');
     opt.value = t;
     opt.textContent = t;
-    opt.selected = (t === current);
-    select.appendChild(opt);
+    opt.selected = (t === S._territoryFilter);
+    terrFilter.appendChild(opt);
   });
+  if (S._territoryFilter === '__unassigned__') unOpt.selected = true;
+  terrFilter.addEventListener('change', e => {
+    S._territoryFilter = e.target.value;
+    S._territorySelected.clear();
+    renderTerritoryTab();
+  });
+  toolbar.appendChild(terrFilter);
 
-  // + New Territory
-  const newOpt = document.createElement('option');
-  newOpt.value = '__new__';
-  newOpt.textContent = '+ New Territory\u2026';
-  select.appendChild(newOpt);
+  const zipInput = document.createElement('input');
+  zipInput.className = 'zip-filter';
+  zipInput.type = 'text';
+  zipInput.placeholder = 'Filter by zip\u2026';
+  zipInput.value = S._zipFilter;
+  zipInput.addEventListener('input', e => {
+    S._zipFilter = e.target.value.trim();
+    S._territorySelected.clear();
+    renderTerritoryTab();
+  });
+  toolbar.appendChild(zipInput);
 
-  // If recommended is the current, select it
-  if (current && current === recommended) {
-    select.value = current;
-  } else if (current) {
-    select.value = current;
-  }
+  const countSpan = document.createElement('span');
+  countSpan.className = 'terr-count';
+  const assigned = records.filter(r => S.territoryAssignments[r.dkwName]).length;
+  countSpan.textContent = records.length + ' customers shown \u00b7 ' + assigned + ' assigned';
+  toolbar.appendChild(countSpan);
 
-  container.appendChild(select);
+  const assignGroup = document.createElement('div');
+  assignGroup.className = 'terr-assign-group';
 
-  // Show assignment label
-  if (current) {
-    const label = document.createElement('span');
-    label.className = 'territory-label';
-    label.textContent = '\u2713 ' + current;
-    container.appendChild(label);
-  }
-
-  return container;
-}
-
-function handleTerritoryChange(e) {
-  const name = e.target.dataset.name;
-  const value = e.target.value;
-
-  if (value === '__new__') {
-    const newName = prompt('Enter new territory name:');
-    if (newName && newName.trim()) {
-      const trimmed = newName.trim();
-      if (!S.territories.includes(trimmed)) {
-        S.territories.push(trimmed);
+  const assignBtn = document.createElement('button');
+  assignBtn.className = 'terr-assign-btn';
+  assignBtn.textContent = 'Assign Selected';
+  assignBtn.disabled = S._territorySelected.size === 0;
+  assignBtn.addEventListener('click', () => {
+    if (S._territorySelected.size === 0) { alert('Check the rows you want to assign.'); return; }
+    // Use the current filter territory if one is selected, otherwise prompt
+    let territory = S._territoryFilter && S._territoryFilter !== '__unassigned__' ? S._territoryFilter : null;
+    if (!territory) {
+      territory = prompt('Enter territory name to assign:\n\nAvailable: ' + S.territories.join(', '));
+      if (!territory || !territory.trim()) return;
+      territory = territory.trim();
+      if (!S.territories.includes(territory)) {
+        S.territories.push(territory);
         S.territories.sort();
       }
-      S.territoryAssignments[name] = trimmed;
     }
-    e.target.value = S.territoryAssignments[name] || '';
-  } else if (value === '') {
-    delete S.territoryAssignments[name];
-  } else {
-    S.territoryAssignments[name] = value;
+    const count = S._territorySelected.size;
+    S._territorySelected.forEach(name => {
+      S.territoryAssignments[name] = territory;
+    });
+    S._territorySelected.clear();
+    persistState();
+    renderAll();
+    showToast('Assigned "' + territory + '" to ' + count + ' customers.');
+  });
+  assignGroup.appendChild(assignBtn);
+  toolbar.appendChild(assignGroup);
+  wrap.appendChild(toolbar);
+
+  if (records.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = '\ud83d\udccd';
+    const p = document.createElement('p');
+    p.textContent = S._zipFilter ? 'No customers match this zip code.' : 'No customers to assign territories to.';
+    empty.appendChild(icon);
+    empty.appendChild(p);
+    wrap.appendChild(empty);
+    return;
   }
 
-  persistState();
-  renderAll();
-}
+  // Table
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const hRow = document.createElement('tr');
 
-// ── Territory: bulk assign dropdown ────────────────────────────────────────
-function renderBulkTerritorySelect() {
-  const select = document.getElementById('bulk-territory-select');
-  select.replaceChildren();
+  // Select all header
+  const thCheck = document.createElement('th');
+  thCheck.style.width = '40px';
+  const selectAll = document.createElement('input');
+  selectAll.type = 'checkbox';
+  selectAll.className = 'terr-check';
+  selectAll.checked = records.length > 0 && records.every(r => S._territorySelected.has(r.dkwName));
+  selectAll.addEventListener('change', () => {
+    if (selectAll.checked) {
+      records.forEach(r => S._territorySelected.add(r.dkwName));
+    } else {
+      records.forEach(r => S._territorySelected.delete(r.dkwName));
+    }
+    renderTerritoryTab();
+  });
+  thCheck.appendChild(selectAll);
+  hRow.appendChild(thCheck);
 
-  const placeholder = document.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = 'Assign Territory\u2026';
-  placeholder.disabled = true;
-  placeholder.selected = true;
-  select.appendChild(placeholder);
+  ['Customer Name', 'Address', 'City', 'Zip', 'Territory'].forEach(c => {
+    const th = document.createElement('th');
+    th.textContent = c;
+    hRow.appendChild(th);
+  });
+  thead.appendChild(hRow);
+  table.appendChild(thead);
 
-  S.territories.forEach(t => {
-    const opt = document.createElement('option');
-    opt.value = t;
-    opt.textContent = t;
-    select.appendChild(opt);
+  const tbody = document.createElement('tbody');
+  records.forEach(r => {
+    const tr = document.createElement('tr');
+
+    // Checkbox
+    const tdCheck = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'terr-check';
+    cb.checked = S._territorySelected.has(r.dkwName);
+    cb.addEventListener('change', () => {
+      if (cb.checked) S._territorySelected.add(r.dkwName);
+      else S._territorySelected.delete(r.dkwName);
+      // Update assign button state and select-all
+      const assignBtnEl = wrap.querySelector('.terr-assign-btn');
+      if (assignBtnEl) assignBtnEl.disabled = S._territorySelected.size === 0;
+      selectAll.checked = records.every(r2 => S._territorySelected.has(r2.dkwName));
+    });
+    tdCheck.appendChild(cb);
+    tr.appendChild(tdCheck);
+
+    // Customer name (use display name based on naming standard)
+    appendTd(tr, getDisplayName(r), 'font-weight:600;font-size:13px');
+
+    // Address
+    const addrTd = document.createElement('td');
+    const addrSp = document.createElement('span');
+    addrSp.className = 'address-cell';
+    addrSp.title = r.address || '';
+    addrSp.textContent = r.address || '\u2014';
+    addrTd.appendChild(addrSp);
+    tr.appendChild(addrTd);
+
+    // City
+    appendTd(tr, r.city || '\u2014', 'font-size:12px;color:var(--text-muted)');
+
+    // Zip
+    appendTd(tr, r.zip || '\u2014', 'font-size:12px;font-weight:600');
+
+    // Territory assignment
+    const terrTd = document.createElement('td');
+    terrTd.className = 'territory-cell';
+    const currentTerr = S.territoryAssignments[r.dkwName];
+    if (currentTerr) {
+      const terrLabel = document.createElement('span');
+      terrLabel.className = 'terr-pill';
+      terrLabel.style.fontSize = '11px';
+      terrLabel.appendChild(txt(currentTerr));
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'terr-x';
+      clearBtn.textContent = '\u00d7';
+      clearBtn.addEventListener('click', () => {
+        delete S.territoryAssignments[r.dkwName];
+        persistState();
+        renderAll();
+      });
+      terrLabel.appendChild(clearBtn);
+      terrTd.appendChild(terrLabel);
+    } else {
+      const dash = document.createElement('span');
+      dash.style.cssText = 'color:var(--text-muted);font-size:12px';
+      dash.textContent = '\u2014 unassigned';
+      terrTd.appendChild(dash);
+    }
+    tr.appendChild(terrTd);
+
+    tbody.appendChild(tr);
   });
 
-  const newOpt = document.createElement('option');
-  newOpt.value = '__new__';
-  newOpt.textContent = '+ New Territory\u2026';
-  select.appendChild(newOpt);
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
+// ── Samsara seed data ─────────────────────────────────────────────────────
+const SEED_DRIVERS = [
+  { id: 'WilliamEmerson001', name: 'William Emerson', phone: '', status: 'active', samsaraId: '52903307' },
+  { id: 'JiroPrioleau001', name: 'Jiro Prioleau', phone: '', status: 'active', samsaraId: '52903285' },
+  { id: 'JamelLloyd001', name: 'Jamel Lloyd', phone: '', status: 'active', samsaraId: '52903359' },
+  { id: 'TravisMenius001', name: 'Travis Menius', phone: '', status: 'active', samsaraId: '55133453' },
+  { id: 'JohnElledgeJr001', name: 'John Elledge, Jr', phone: '', status: 'active', samsaraId: '54126533' },
+  { id: 'ShonStroud001', name: 'Shon Stroud', phone: '', status: 'active', samsaraId: '' },
+  { id: 'CraigMitchell001', name: 'M. Craig Mitchell', phone: '', status: 'active', samsaraId: '' },
+  { id: 'AmariDinkins001', name: 'Amari Dinkins', phone: '', status: 'unknown', samsaraId: '' },
+];
+
+const SEED_VEHICLES = [
+  { id: 'KW001', name: 'KW001-Peterbilt', make: 'Peterbilt', model: '2010', year: '2010', capacity: '4,500 gal', vin: '1NPSX0EX7AD108192', status: 'active', assignedDriverId: '' },
+  { id: 'KW003', name: 'KW003-Volvo', make: 'Volvo', model: '2003', year: '2003', capacity: '3,800 gal', vin: '4V5NC9GF13N337828', status: 'active', assignedDriverId: 'JiroPrioleau001' },
+  { id: 'KW006', name: 'KW006-Mack', make: 'Mack', model: '2001', year: '2001', capacity: '3,300 gal', vin: '1M1AA12Y91W139777', status: 'active', assignedDriverId: '' },
+  { id: 'KW007', name: 'KW007-DayCab', make: 'Freightliner', model: '2013', year: '2013', capacity: '5,500 gal', vin: '1FUJGEDV6DSBU5083', status: 'active', assignedDriverId: 'ShonStroud001' },
+  { id: 'KWT11', name: 'KWT11-Vac Tanker', make: 'Vac Tanker', model: '2006', year: '2006', capacity: '5,500 gal', vin: '', status: 'active', assignedDriverId: '' },
+  { id: 'KW010', name: 'KW010-Bladenboro', make: 'Freightliner', model: '2015', year: '2015', capacity: '5,000 gal', vin: '1FVMG3DV2FHGA7163', status: 'active', assignedDriverId: 'WilliamEmerson001' },
+  { id: 'KW103', name: 'KW103-Mack', make: 'Mack', model: '2003', year: '2003', capacity: '3,500 gal', vin: '1M1AA12Y73W149968', status: 'active', assignedDriverId: 'JohnElledgeJr001' },
+  { id: 'KWP01', name: 'KWP01-Provac', make: 'Dodge Ram 4500', model: '2018', year: '2018', capacity: '500 gal', vin: '3C7WRKDL0JG248393', status: 'active', assignedDriverId: '' },
+  { id: 'KW009', name: 'KW009-Statesville', make: 'Freightliner', model: '2020', year: '2020', capacity: '', vin: '', status: 'inactive', assignedDriverId: '' },
+  { id: 'KW005', name: 'KW005', make: 'Freightliner', model: '2005', year: '2005', capacity: '', vin: '', status: 'unknown', assignedDriverId: '' },
+  { id: 'KR203', name: 'KR203-Reserve', make: 'White Freightliner', model: '2006', year: '2006', capacity: '', vin: '', status: 'active', assignedDriverId: 'JamelLloyd001' },
+];
+
+const SEED_TERRITORY_DRIVERS = {
+  'KWE-SE NC (William Emerson)': { primary: 'WilliamEmerson001', backup: '' },
+  'KWE-Cola 1 (Jiro Prioleau)': { primary: 'JiroPrioleau001', backup: '' },
+  'CLT (Jamel Lloyd)': { primary: 'JamelLloyd001', backup: '' },
+  'KWE-Upstate (John Elledge)': { primary: 'JohnElledgeJr001', backup: '' },
+  'KWE-Cola2 (Craig Mitchell)': { primary: 'CraigMitchell001', backup: '' },
+};
+
+function seedFleetData() {
+  if (S.drivers.length === 0) {
+    S.drivers = SEED_DRIVERS.map(d => ({...d}));
+  }
+  if (S.vehicles.length === 0) {
+    S.vehicles = SEED_VEHICLES.map(v => ({...v}));
+  }
+  if (Object.keys(S.territoryDrivers).length === 0) {
+    Object.entries(SEED_TERRITORY_DRIVERS).forEach(([terr, mapping]) => {
+      if (S.territories.includes(terr)) {
+        S.territoryDrivers[terr] = {...mapping};
+      }
+    });
+  }
+}
+
+// ── Drivers Tab ───────────────────────────────────────────────────────────
+function renderDriversTab() {
+  const wrap = document.getElementById('table-wrap');
+  wrap.replaceChildren();
+
+  // Intro bar
+  const intro = document.createElement('div');
+  intro.className = 'tab-intro';
+  intro.appendChild(txt('Review and update driver information from Samsara. Assign primary and backup drivers to each territory.'));
+  const addDriverBtn = document.createElement('button');
+  addDriverBtn.className = 'add-btn';
+  addDriverBtn.textContent = '+ Add Driver';
+  addDriverBtn.addEventListener('click', () => {
+    const name = prompt('Enter driver name:');
+    if (!name || !name.trim()) return;
+    const trimmed = name.trim();
+    const id = trimmed.replace(/[^A-Za-z0-9]/g, '') + '001';
+    if (S.drivers.some(d => d.id === id)) { alert('A driver with a similar name already exists.'); return; }
+    S.drivers.push({ id: id, name: trimmed, phone: '', status: 'active', samsaraId: '' });
+    persistState();
+    renderAll();
+  });
+  intro.appendChild(addDriverBtn);
+  wrap.appendChild(intro);
+
+  // Driver cards
+  const driverList = document.createElement('div');
+  driverList.style.cssText = 'padding: 8px 0;';
+
+  S.drivers.forEach((driver, idx) => {
+    const card = document.createElement('div');
+    card.className = 'driver-card';
+
+    const header = document.createElement('div');
+    header.className = 'card-header';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'card-name';
+    nameSpan.textContent = driver.name;
+    header.appendChild(nameSpan);
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'card-status ' + (driver.status === 'active' ? 'active' : 'inactive');
+    statusBadge.textContent = driver.status;
+    header.appendChild(statusBadge);
+    card.appendChild(header);
+
+    const fields = document.createElement('div');
+    fields.className = 'card-fields';
+
+    // Name field (editable)
+    const nameField = document.createElement('div');
+    nameField.className = 'card-field';
+    const nameLabel = document.createElement('span');
+    nameLabel.className = 'field-label';
+    nameLabel.textContent = 'Name';
+    nameField.appendChild(nameLabel);
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = driver.name;
+    nameInput.dataset.field = 'name';
+    nameInput.dataset.idx = idx;
+    nameInput.addEventListener('input', () => {
+      nameInput.className = nameInput.value !== driver.name ? 'edited' : '';
+    });
+    nameField.appendChild(nameInput);
+    fields.appendChild(nameField);
+
+    // Phone field
+    const phoneField = document.createElement('div');
+    phoneField.className = 'card-field';
+    const phoneLabel = document.createElement('span');
+    phoneLabel.className = 'field-label';
+    phoneLabel.textContent = 'Phone';
+    phoneField.appendChild(phoneLabel);
+    const phoneInput = document.createElement('input');
+    phoneInput.type = 'tel';
+    phoneInput.value = driver.phone;
+    phoneInput.placeholder = 'Enter phone number';
+    phoneInput.dataset.field = 'phone';
+    phoneInput.dataset.idx = idx;
+    phoneField.appendChild(phoneInput);
+    fields.appendChild(phoneField);
+
+    // Status field
+    const statusField = document.createElement('div');
+    statusField.className = 'card-field';
+    const statusLabel = document.createElement('span');
+    statusLabel.className = 'field-label';
+    statusLabel.textContent = 'Status';
+    statusField.appendChild(statusLabel);
+    const statusSelect = document.createElement('select');
+    statusSelect.dataset.field = 'status';
+    statusSelect.dataset.idx = idx;
+    ['active', 'inactive', 'unknown'].forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = s.charAt(0).toUpperCase() + s.slice(1);
+      opt.selected = (s === driver.status);
+      statusSelect.appendChild(opt);
+    });
+    statusField.appendChild(statusSelect);
+    fields.appendChild(statusField);
+
+    // Samsara ID (read-only display)
+    if (driver.samsaraId) {
+      const samField = document.createElement('div');
+      samField.className = 'card-field';
+      const samLabel = document.createElement('span');
+      samLabel.className = 'field-label';
+      samLabel.textContent = 'Samsara ID';
+      samField.appendChild(samLabel);
+      const samValue = document.createElement('span');
+      samValue.className = 'field-value';
+      samValue.style.cssText = 'font-family:monospace;font-size:12px;color:var(--text-muted)';
+      samValue.textContent = driver.samsaraId;
+      samField.appendChild(samValue);
+      fields.appendChild(samField);
+    }
+
+    card.appendChild(fields);
+
+    // Actions
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'save-btn';
+    saveBtn.textContent = 'Save Changes';
+    saveBtn.addEventListener('click', () => {
+      const newName = nameInput.value.trim();
+      if (!newName) { alert('Name cannot be empty.'); return; }
+      // Update territory driver references if name changed
+      const oldId = driver.id;
+      S.drivers[idx] = {
+        ...S.drivers[idx],
+        name: newName,
+        phone: phoneInput.value.trim(),
+        status: statusSelect.value,
+      };
+      persistState();
+      renderAll();
+      showToast('Driver "' + newName + '" updated.');
+    });
+    actions.appendChild(saveBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.textContent = 'Remove';
+    deleteBtn.addEventListener('click', () => {
+      if (!confirm('Remove driver "' + driver.name + '"?')) return;
+      // Clean up territory assignments referencing this driver
+      Object.keys(S.territoryDrivers).forEach(t => {
+        const td = S.territoryDrivers[t];
+        if (td.primary === driver.id) td.primary = '';
+        if (td.backup === driver.id) td.backup = '';
+      });
+      // Clean up vehicle assignments
+      S.vehicles.forEach(v => {
+        if (v.assignedDriverId === driver.id) v.assignedDriverId = '';
+      });
+      S.drivers.splice(idx, 1);
+      persistState();
+      renderAll();
+    });
+    actions.appendChild(deleteBtn);
+    card.appendChild(actions);
+
+    driverList.appendChild(card);
+  });
+
+  wrap.appendChild(driverList);
+
+  // Territory-driver assignment section
+  if (S.territories.length > 0 && S.drivers.length > 0) {
+    const terrSection = document.createElement('div');
+    terrSection.style.cssText = 'padding: 0 16px 16px;';
+
+    const terrHeader = document.createElement('div');
+    terrHeader.style.cssText = 'padding: 16px 4px 8px; font-size: 14px; font-weight: 700; color: var(--brand); border-top: 2px solid var(--border); margin-top: 8px;';
+    terrHeader.textContent = 'Territory Driver Assignments';
+    terrSection.appendChild(terrHeader);
+
+    S.territories.forEach(terr => {
+      const row = document.createElement('div');
+      row.className = 'terr-driver-row';
+
+      const terrName = document.createElement('span');
+      terrName.className = 'terr-name';
+      terrName.textContent = terr;
+      row.appendChild(terrName);
+
+      const mapping = S.territoryDrivers[terr] || { primary: '', backup: '' };
+
+      // Primary driver
+      const primaryLabel = document.createElement('span');
+      primaryLabel.className = 'role-label';
+      primaryLabel.textContent = 'Primary';
+      row.appendChild(primaryLabel);
+
+      const primarySelect = document.createElement('select');
+      const noneOpt = document.createElement('option');
+      noneOpt.value = '';
+      noneOpt.textContent = '-- None --';
+      primarySelect.appendChild(noneOpt);
+      S.drivers.filter(d => d.status === 'active').forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        opt.selected = (d.id === mapping.primary);
+        primarySelect.appendChild(opt);
+      });
+      primarySelect.addEventListener('change', () => {
+        if (!S.territoryDrivers[terr]) S.territoryDrivers[terr] = { primary: '', backup: '' };
+        S.territoryDrivers[terr] = { ...S.territoryDrivers[terr], primary: primarySelect.value };
+        persistState();
+      });
+      row.appendChild(primarySelect);
+
+      // Backup driver
+      const backupLabel = document.createElement('span');
+      backupLabel.className = 'role-label';
+      backupLabel.textContent = 'Backup';
+      row.appendChild(backupLabel);
+
+      const backupSelect = document.createElement('select');
+      const noneOpt2 = document.createElement('option');
+      noneOpt2.value = '';
+      noneOpt2.textContent = '-- None --';
+      backupSelect.appendChild(noneOpt2);
+      S.drivers.filter(d => d.status === 'active').forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.id;
+        opt.textContent = d.name;
+        opt.selected = (d.id === mapping.backup);
+        backupSelect.appendChild(opt);
+      });
+      backupSelect.addEventListener('change', () => {
+        if (!S.territoryDrivers[terr]) S.territoryDrivers[terr] = { primary: '', backup: '' };
+        S.territoryDrivers[terr] = { ...S.territoryDrivers[terr], backup: backupSelect.value };
+        persistState();
+      });
+      row.appendChild(backupSelect);
+
+      terrSection.appendChild(row);
+    });
+
+    wrap.appendChild(terrSection);
+  }
+}
+
+// ── Vehicles Tab ──────────────────────────────────────────────────────────
+function renderVehiclesTab() {
+  const wrap = document.getElementById('table-wrap');
+  wrap.replaceChildren();
+
+  // Intro bar
+  const intro = document.createElement('div');
+  intro.className = 'tab-intro';
+  intro.appendChild(txt('Confirm vehicle information from Samsara and assign drivers to each vehicle.'));
+  const addVehicleBtn = document.createElement('button');
+  addVehicleBtn.className = 'add-btn';
+  addVehicleBtn.textContent = '+ Add Vehicle';
+  addVehicleBtn.addEventListener('click', () => {
+    const fleetId = prompt('Enter fleet ID (e.g., KW012):');
+    if (!fleetId || !fleetId.trim()) return;
+    const id = fleetId.trim().toUpperCase();
+    if (S.vehicles.some(v => v.id === id)) { alert('Vehicle ' + id + ' already exists.'); return; }
+    S.vehicles.push({ id: id, name: id, make: '', model: '', year: '', capacity: '', vin: '', status: 'active', assignedDriverId: '', notes: '' });
+    persistState();
+    renderAll();
+  });
+  intro.appendChild(addVehicleBtn);
+  wrap.appendChild(intro);
+
+  // Vehicle table
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const hRow = document.createElement('tr');
+  ['Fleet ID', 'Name', 'Make/Model', 'Year', 'Capacity', 'VIN', 'Assigned Driver', 'Status', ''].forEach(c => {
+    const th = document.createElement('th');
+    th.textContent = c;
+    hRow.appendChild(th);
+  });
+  thead.appendChild(hRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  S.vehicles.forEach((vehicle, idx) => {
+    const tr = document.createElement('tr');
+
+    // Fleet ID
+    const idTd = document.createElement('td');
+    idTd.style.cssText = 'font-weight:700;font-family:monospace;font-size:12px';
+    idTd.textContent = vehicle.id;
+    tr.appendChild(idTd);
+
+    // Name (editable)
+    const nameTd = document.createElement('td');
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = vehicle.name;
+    nameInput.style.cssText = 'padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;width:140px';
+    nameInput.addEventListener('change', () => {
+      S.vehicles[idx] = { ...S.vehicles[idx], name: nameInput.value.trim() };
+      persistState();
+    });
+    nameTd.appendChild(nameInput);
+    tr.appendChild(nameTd);
+
+    // Make/Model
+    appendTd(tr, (vehicle.make || '') + (vehicle.model ? ' ' + vehicle.model : ''), 'font-size:12px');
+
+    // Year
+    appendTd(tr, vehicle.year || '\u2014', 'font-size:12px;text-align:center');
+
+    // Capacity
+    appendTd(tr, vehicle.capacity || '\u2014', 'font-size:12px');
+
+    // VIN
+    const vinTd = document.createElement('td');
+    vinTd.style.cssText = 'font-family:monospace;font-size:10px;color:var(--text-muted);max-width:120px;overflow:hidden;text-overflow:ellipsis';
+    vinTd.title = vehicle.vin || '';
+    vinTd.textContent = vehicle.vin ? vehicle.vin.slice(-6) : '\u2014';
+    tr.appendChild(vinTd);
+
+    // Assigned Driver
+    const driverTd = document.createElement('td');
+    const driverSelect = document.createElement('select');
+    driverSelect.style.cssText = 'padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px;min-width:140px';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '-- Unassigned --';
+    driverSelect.appendChild(noneOpt);
+    S.drivers.filter(d => d.status === 'active').forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.name;
+      opt.selected = (d.id === vehicle.assignedDriverId);
+      driverSelect.appendChild(opt);
+    });
+    driverSelect.addEventListener('change', () => {
+      S.vehicles[idx] = { ...S.vehicles[idx], assignedDriverId: driverSelect.value };
+      persistState();
+    });
+    driverTd.appendChild(driverSelect);
+    tr.appendChild(driverTd);
+
+    // Status
+    const statusTd = document.createElement('td');
+    const statusBadge = document.createElement('span');
+    statusBadge.className = 'card-status ' + (vehicle.status === 'active' ? 'active' : 'inactive');
+    statusBadge.textContent = vehicle.status;
+    statusTd.appendChild(statusBadge);
+    tr.appendChild(statusTd);
+
+    // Actions
+    const actionTd = document.createElement('td');
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'terr-x';
+    removeBtn.style.cssText = 'font-size:16px;color:var(--danger);cursor:pointer;background:none;border:none';
+    removeBtn.textContent = '\u00d7';
+    removeBtn.addEventListener('click', () => {
+      if (!confirm('Remove vehicle "' + vehicle.name + '"?')) return;
+      S.vehicles.splice(idx, 1);
+      persistState();
+      renderAll();
+    });
+    actionTd.appendChild(removeBtn);
+    tr.appendChild(actionTd);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+
+  if (S.vehicles.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    const p = document.createElement('p');
+    p.textContent = 'No vehicles added yet. Click "+ Add Vehicle" to get started.';
+    empty.appendChild(p);
+    wrap.appendChild(empty);
+  }
+}
+
+// ── Samsara Import & Sync Tab ─────────────────────────────────────────────
+function parseSamsaraImport(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Find header row
+    let hi = -1;
+    for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      const row = (rows[i] || []).map(c => String(c).toLowerCase().trim());
+      if (row.includes('name') && (row.includes('address') || row.includes('formatted address'))) {
+        hi = i;
+        break;
+      }
+    }
+    if (hi === -1) {
+      alert('Could not find Name and Address columns in the Samsara export.');
+      return;
+    }
+
+    const headers = rows[hi].map(h => String(h).trim().toLowerCase());
+    const col = (name) => {
+      const variants = {
+        'name': ['name'],
+        'address': ['address', 'formatted address', 'formattedaddress'],
+        'latitude': ['latitude', 'lat'],
+        'longitude': ['longitude', 'lng', 'lon'],
+        'tags': ['tags', 'tag'],
+        'type': ['type', 'address type', 'addresstype'],
+        'notes': ['notes', 'note'],
+        'id': ['id', 'address id'],
+        'radius': ['radius', 'radiusmeters'],
+      };
+      const v = variants[name] || [name];
+      return headers.findIndex(h => v.some(n => h.includes(n)));
+    };
+
+    const nameIdx = col('name');
+    const addrIdx = col('address');
+    const latIdx = col('latitude');
+    const lngIdx = col('longitude');
+    const tagsIdx = col('tags');
+    const typeIdx = col('type');
+    const notesIdx = col('notes');
+    const idIdx = col('id');
+
+    const imported = [];
+    for (let i = hi + 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row[nameIdx]) continue;
+      imported.push({
+        samsaraId: idIdx >= 0 ? String(row[idIdx] || '') : '',
+        name: String(row[nameIdx] || '').trim(),
+        address: addrIdx >= 0 ? String(row[addrIdx] || '').trim() : '',
+        latitude: latIdx >= 0 ? String(row[latIdx] || '') : '',
+        longitude: lngIdx >= 0 ? String(row[lngIdx] || '') : '',
+        tags: tagsIdx >= 0 ? String(row[tagsIdx] || '') : '',
+        type: typeIdx >= 0 ? String(row[typeIdx] || '') : '',
+        notes: notesIdx >= 0 ? String(row[notesIdx] || '') : '',
+      });
+    }
+
+    S._samsaraImport = imported;
+    S._syncFilter = '';
+    S.activeTab = 'samsara-sync';
+    document.getElementById('tab-samsara-sync').classList.remove('hidden');
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'samsara-sync'));
+    document.querySelector('.toolbar').classList.add('hidden');
+    renderAll();
+    showToast(imported.length + ' addresses loaded from Samsara export.');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function buildSyncData() {
+  if (!S._samsaraImport) return { rows: [], match: 0, mismatch: 0, missing: 0, extra: 0 };
+
+  // Build a lookup of app records by normalized name
+  const appRecords = {};
+  allRecords().filter(r => S.decisions[r.dkwName] !== 'inactivate').forEach(r => {
+    const displayName = getDisplayName(r);
+    const key = displayName.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    appRecords[key] = {
+      name: displayName,
+      address: [r.address, r.city, r.state, r.zip].filter(Boolean).join(', '),
+      territory: S.territoryAssignments[r.dkwName] || '',
+      dkwName: r.dkwName,
+    };
+  });
+
+  // Build a lookup of Samsara records by normalized name
+  const samRecords = {};
+  S._samsaraImport.forEach(s => {
+    const key = s.name.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    samRecords[key] = s;
+  });
+
+  const allKeys = new Set([...Object.keys(appRecords), ...Object.keys(samRecords)]);
+  const rows = [];
+  let match = 0, mismatch = 0, missing = 0, extra = 0;
+
+  allKeys.forEach(key => {
+    const app = appRecords[key];
+    const sam = samRecords[key];
+
+    if (app && sam) {
+      // Both exist — check if data matches
+      const samTags = sam.tags || '';
+      const appTerritory = app.territory;
+      const territoryMatch = !appTerritory || samTags.includes(appTerritory);
+      const addrMatch = !app.address || !sam.address ||
+        app.address.toUpperCase().replace(/[^A-Z0-9]/g, '').includes(
+          sam.address.split(',')[0].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)
+        ) ||
+        sam.address.toUpperCase().replace(/[^A-Z0-9]/g, '').includes(
+          app.address.split(',')[0].toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)
+        );
+
+      if (territoryMatch && addrMatch) {
+        rows.push({ status: 'match', appName: app.name, samName: sam.name, appAddress: app.address, samAddress: sam.address, appTerritory: appTerritory, samTags: samTags, samsaraId: sam.samsaraId });
+        match++;
+      } else {
+        rows.push({ status: 'mismatch', appName: app.name, samName: sam.name, appAddress: app.address, samAddress: sam.address, appTerritory: appTerritory, samTags: samTags, samsaraId: sam.samsaraId });
+        mismatch++;
+      }
+    } else if (app && !sam) {
+      // In app but NOT in Samsara — needs to be pushed
+      rows.push({ status: 'missing', appName: app.name, samName: '', appAddress: app.address, samAddress: '', appTerritory: app.territory, samTags: '', samsaraId: '' });
+      missing++;
+    } else {
+      // In Samsara but NOT in app — extra record
+      rows.push({ status: 'extra', appName: '', samName: sam.name, appAddress: '', samAddress: sam.address, appTerritory: '', samTags: sam.tags, samsaraId: sam.samsaraId });
+      extra++;
+    }
+  });
+
+  // Sort: mismatches first, then missing, then extra, then matches
+  const order = { mismatch: 0, missing: 1, extra: 2, match: 3 };
+  rows.sort((a, b) => order[a.status] - order[b.status]);
+
+  return { rows, match, mismatch, missing, extra };
+}
+
+function renderSamsaraSyncTab() {
+  const wrap = document.getElementById('table-wrap');
+  wrap.replaceChildren();
+
+  if (!S._samsaraImport) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = '\u26a1';
+    empty.appendChild(icon);
+    const p = document.createElement('p');
+    p.textContent = 'Upload a Samsara address export to compare against app data.';
+    empty.appendChild(p);
+    const btn = document.createElement('button');
+    btn.className = 'btn-primary';
+    btn.textContent = 'Upload Samsara Export';
+    btn.style.marginTop = '16px';
+    btn.addEventListener('click', () => document.getElementById('samsara-import-input').click());
+    empty.appendChild(btn);
+    wrap.appendChild(empty);
+    return;
+  }
+
+  const sync = buildSyncData();
+
+  // Summary stats
+  const summary = document.createElement('div');
+  summary.className = 'sync-summary';
+  [
+    { cls: 'match', num: sync.match, lbl: 'Matched' },
+    { cls: 'mismatch', num: sync.mismatch, lbl: 'Mismatched' },
+    { cls: 'missing', num: sync.missing, lbl: 'Not in Samsara' },
+    { cls: 'extra', num: sync.extra, lbl: 'Only in Samsara' },
+  ].forEach(s => {
+    const stat = document.createElement('div');
+    stat.className = 'sync-stat ' + s.cls;
+    const num = document.createElement('div');
+    num.className = 'num';
+    num.textContent = s.num;
+    stat.appendChild(num);
+    const lbl = document.createElement('div');
+    lbl.className = 'lbl';
+    lbl.textContent = s.lbl;
+    stat.appendChild(lbl);
+    summary.appendChild(stat);
+  });
+  wrap.appendChild(summary);
+
+  // Legend
+  const legend = document.createElement('div');
+  legend.className = 'sync-legend';
+  [
+    { color: '#059669', label: 'Match' },
+    { color: '#d97706', label: 'Mismatch' },
+    { color: '#c0392b', label: 'Not in Samsara' },
+    { color: '#1d6fa4', label: 'Only in Samsara' },
+  ].forEach(l => {
+    const span = document.createElement('span');
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = l.color;
+    span.appendChild(dot);
+    span.appendChild(txt(' ' + l.label));
+    legend.appendChild(span);
+  });
+  wrap.appendChild(legend);
+
+  // Filter bar
+  const filterBar = document.createElement('div');
+  filterBar.className = 'sync-filter-bar';
+  const filterSelect = document.createElement('select');
+  [
+    { value: '', label: 'All (' + sync.rows.length + ')' },
+    { value: 'mismatch', label: 'Mismatched (' + sync.mismatch + ')' },
+    { value: 'missing', label: 'Not in Samsara (' + sync.missing + ')' },
+    { value: 'extra', label: 'Only in Samsara (' + sync.extra + ')' },
+    { value: 'match', label: 'Matched (' + sync.match + ')' },
+  ].forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o.value;
+    opt.textContent = o.label;
+    opt.selected = (o.value === S._syncFilter);
+    filterSelect.appendChild(opt);
+  });
+  filterSelect.addEventListener('change', () => {
+    S._syncFilter = filterSelect.value;
+    renderSamsaraSyncTab();
+  });
+  filterBar.appendChild(filterSelect);
+
+  const reuploadBtn = document.createElement('button');
+  reuploadBtn.className = 'add-btn';
+  reuploadBtn.textContent = 'Re-upload Samsara Export';
+  reuploadBtn.style.marginLeft = 'auto';
+  reuploadBtn.addEventListener('click', () => document.getElementById('samsara-import-input').click());
+  filterBar.appendChild(reuploadBtn);
+  wrap.appendChild(filterBar);
+
+  // Filtered rows
+  let rows = sync.rows;
+  if (S._syncFilter) {
+    rows = rows.filter(r => r.status === S._syncFilter);
+  }
+
+  // Table
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const hRow = document.createElement('tr');
+  ['Status', 'App Name', 'Samsara Name', 'App Address', 'Samsara Address', 'App Territory', 'Samsara Tags'].forEach(c => {
+    const th = document.createElement('th');
+    th.textContent = c;
+    hRow.appendChild(th);
+  });
+  thead.appendChild(hRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.className = 'row-' + r.status;
+
+    // Status
+    const statusTd = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = 'card-status ' + (r.status === 'match' ? 'active' : 'inactive');
+    badge.textContent = r.status;
+    statusTd.appendChild(badge);
+    tr.appendChild(statusTd);
+
+    // App name
+    appendTd(tr, r.appName || '\u2014', 'font-size:12px;font-weight:600');
+
+    // Samsara name
+    appendTd(tr, r.samName || '\u2014', 'font-size:12px');
+
+    // App address (truncated)
+    const appAddrTd = document.createElement('td');
+    appAddrTd.style.cssText = 'font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    appAddrTd.title = r.appAddress || '';
+    appAddrTd.textContent = r.appAddress || '\u2014';
+    tr.appendChild(appAddrTd);
+
+    // Samsara address (truncated)
+    const samAddrTd = document.createElement('td');
+    samAddrTd.style.cssText = 'font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+    samAddrTd.title = r.samAddress || '';
+    samAddrTd.textContent = r.samAddress || '\u2014';
+    tr.appendChild(samAddrTd);
+
+    // App territory
+    appendTd(tr, r.appTerritory || '\u2014', 'font-size:11px');
+
+    // Samsara tags
+    appendTd(tr, r.samTags || '\u2014', 'font-size:11px;color:var(--text-muted)');
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+
+  if (rows.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    const p = document.createElement('p');
+    p.textContent = 'No records match this filter.';
+    empty.appendChild(p);
+    wrap.appendChild(empty);
+  }
+
+  // Update tab count
+  setText('tab-samsara-sync-count', sync.mismatch + sync.missing);
 }
 
 // ── Event handlers ─────────────────────────────────────────────────────────
@@ -993,9 +2070,12 @@ document.getElementById('tabs').addEventListener('click', e => {
   const tab = e.target.closest('[data-tab]');
   if (!tab) return;
   S.activeTab = tab.dataset.tab;
+  S._territorySelected.clear();
+  S._zipFilter = '';
+  S._territoryFilter = '';
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === S.activeTab));
-  const isHelp = S.activeTab === 'help';
-  document.querySelector('.toolbar').classList.toggle('hidden', isHelp);
+  const hideToolbar = S.activeTab === 'help' || S.activeTab === 'territories' || S.activeTab === 'drivers' || S.activeTab === 'vehicles' || S.activeTab === 'samsara-sync';
+  document.querySelector('.toolbar').classList.toggle('hidden', hideToolbar);
   show('bulk-inactivate-btn', S.activeTab === 'pairs');
   show('bulk-rename-btn',     S.activeTab === 'orphans');
   document.getElementById('search-box').value = '';
@@ -1020,27 +2100,6 @@ function bulkDecide(action) {
   renderAll();
 }
 
-// Bulk territory assignment
-document.getElementById('bulk-territory-select').addEventListener('change', e => {
-  let territory = e.target.value;
-  if (territory === '__new__') {
-    const name = prompt('Enter new territory name:');
-    if (!name || !name.trim()) { e.target.value = ''; return; }
-    territory = name.trim();
-    if (!S.territories.includes(territory)) {
-      S.territories.push(territory);
-      S.territories.sort();
-    }
-  }
-  if (!territory) return;
-
-  const visible = visibleRecords();
-  visible.forEach(r => { S.territoryAssignments[r.dkwName] = territory; });
-
-  persistState();
-  renderAll();
-  showToast('Assigned "' + territory + '" to ' + visible.length + ' visible records.');
-});
 
 // ── Session persistence (localStorage) ────────────────────────────────────
 const STORAGE_KEY = 'kw-cleanup-session';
@@ -1056,6 +2115,10 @@ function persistState() {
       decisions: allDecisions,
       territories: S.territories,
       territoryAssignments: allTerrAssignments,
+      namingStandard: S.namingStandard,
+      drivers: S.drivers,
+      vehicles: S.vehicles,
+      territoryDrivers: S.territoryDrivers,
       dkwNames,
       savedAt: Date.now()
     }));
@@ -1073,6 +2136,10 @@ function loadSession() {
       decisions: data.decisions || {},
       territories: data.territories || [],
       territoryAssignments: data.territoryAssignments || {},
+      namingStandard: data.namingStandard || 'dkw',
+      drivers: data.drivers || [],
+      vehicles: data.vehicles || [],
+      territoryDrivers: data.territoryDrivers || {},
       dkwNames: data.dkwNames || [],
     };
   } catch (e) {
@@ -1175,8 +2242,7 @@ function exportXlsx(includeAll) {
 
   const dataRows = records.map(r => {
     const action    = (S.decisions[r.dkwName] || 'pending').toUpperCase();
-    // renameTo: prefer stored suggestedName, fall back to stripping prefix from dkwName
-    const renameTo  = r.suggestedName || r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+    const renameTo  = getDisplayName(r);
     const cleanTo   = action === 'RENAME' ? renameTo : (r.cleanName || '');
     const note      = action === 'INACTIVATE'
       ? 'Find in SF \u2192 set status to Inactive' + (r.cleanName ? ' (keep: ' + r.cleanName + ')' : '')
@@ -1265,39 +2331,162 @@ function exportXlsx(includeAll) {
 
 // ── Samsara CSV Export ─────────────────────────────────────────────────────
 document.getElementById('export-samsara-btn').addEventListener('click', exportSamsaraCsv);
+document.getElementById('import-samsara-btn').addEventListener('click', () =>
+  document.getElementById('samsara-import-input').click());
+document.getElementById('samsara-import-input').addEventListener('change', e => {
+  if (e.target.files[0]) parseSamsaraImport(e.target.files[0]);
+  e.target.value = '';
+});
 
 function exportSamsaraCsv() {
-  const records = allRecords().filter(r =>
-    S.territoryAssignments[r.dkwName] && r.address
-  );
-  if (!records.length) {
-    alert('No records with territory assignments to export.\nAssign territories first, then export.');
-    return;
-  }
+  const wb = XLSX.utils.book_new();
 
-  const rows = [['Name', 'Address', 'Radius', 'Tags', 'Notes', 'Type']];
+  // ── Sheet 1: Addresses (customer locations → Samsara geofences) ──────
+  const records = allRecords().filter(r =>
+    S.decisions[r.dkwName] !== 'inactivate' && r.address
+  );
+
+  const addrRows = [['Id', 'Address', 'Name', 'Latitude', 'Longitude', 'Radius', 'Tags', 'Notes', 'Type']];
+  let withGeo = 0;
+  let withoutGeo = 0;
 
   records.forEach(r => {
-    const action = S.decisions[r.dkwName] || 'pending';
-    // Use the clean name — what the customer will be called after cleanup
-    let name;
-    if (action === 'rename') {
-      name = r.suggestedName || r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
-    } else if (r.cleanName) {
-      name = r.cleanName;
+    const name = getDisplayName(r);
+    const territory = S.territoryAssignments[r.dkwName] || '';
+
+    let fullAddress = r.address;
+    if (r.city) fullAddress += ', ' + r.city;
+    if (r.state) fullAddress += ', ' + r.state;
+    if (r.zip) fullAddress += ' ' + r.zip;
+
+    let lat = '';
+    let lng = '';
+    if (typeof GEODATA !== 'undefined' && GEODATA && GEODATA.locations) {
+      const n = norm(r.dkwName);
+      const geo = GEODATA.locations[n];
+      if (geo && geo.lat && geo.lng) {
+        lat = geo.lat;
+        lng = geo.lng;
+        withGeo++;
+      } else {
+        withoutGeo++;
+      }
     } else {
-      name = r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+      withoutGeo++;
     }
 
-    const territory = S.territoryAssignments[r.dkwName];
-    rows.push([name, r.address, '250', territory, '', 'Customer']);
+    // Tags: territory, primary driver, assigned vehicle
+    const tagParts = [];
+    if (territory) tagParts.push(territory);
+    const terrDriverMapping = S.territoryDrivers[territory];
+    if (terrDriverMapping && terrDriverMapping.primary) {
+      const driver = S.drivers.find(d => d.id === terrDriverMapping.primary);
+      if (driver) tagParts.push(driver.name);
+    }
+    if (terrDriverMapping && terrDriverMapping.primary) {
+      const vehicle = S.vehicles.find(v => v.assignedDriverId === terrDriverMapping.primary);
+      if (vehicle) tagParts.push(vehicle.name);
+    }
+    const tags = tagParts.join(',');
+
+    addrRows.push(['', fullAddress, name, lat, lng, '250', tags, '', 'Normal Geofence']);
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Samsara Import');
-  XLSX.writeFile(wb, 'KW_Samsara_Locations_' + new Date().toISOString().slice(0, 10) + '.csv',
-    { bookType: 'csv' });
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(addrRows), 'Addresses');
+
+  // ── Sheet 2: Drivers ─────────────────────────────────────────────────
+  const driverRows = [['Driver ID', 'Name', 'Phone', 'Status', 'Samsara ID', 'Primary Territory', 'Backup Territory']];
+
+  S.drivers.forEach(d => {
+    // Find territories where this driver is primary or backup
+    const primaryTerrs = [];
+    const backupTerrs = [];
+    Object.entries(S.territoryDrivers).forEach(([terr, mapping]) => {
+      if (mapping.primary === d.id) primaryTerrs.push(terr);
+      if (mapping.backup === d.id) backupTerrs.push(terr);
+    });
+
+    driverRows.push([
+      d.id,
+      d.name,
+      d.phone || '',
+      d.status,
+      d.samsaraId || '',
+      primaryTerrs.join('; '),
+      backupTerrs.join('; '),
+    ]);
+  });
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(driverRows), 'Drivers');
+
+  // ── Sheet 3: Vehicles ────────────────────────────────────────────────
+  const vehicleRows = [['Fleet ID', 'Name', 'Make', 'Model', 'Year', 'Capacity', 'VIN', 'Status', 'Assigned Driver', 'Assigned Driver ID']];
+
+  S.vehicles.forEach(v => {
+    const driver = v.assignedDriverId ? S.drivers.find(d => d.id === v.assignedDriverId) : null;
+    vehicleRows.push([
+      v.id,
+      v.name,
+      v.make || '',
+      v.model || '',
+      v.year || '',
+      v.capacity || '',
+      v.vin || '',
+      v.status,
+      driver ? driver.name : '',
+      v.assignedDriverId || '',
+    ]);
+  });
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(vehicleRows), 'Vehicles');
+
+  // ── Sheet 4: Territories ─────────────────────────────────────────────
+  const terrRows = [['Territory', 'Primary Driver', 'Primary Driver ID', 'Backup Driver', 'Backup Driver ID', 'Customer Count']];
+
+  S.territories.forEach(terr => {
+    const mapping = S.territoryDrivers[terr] || { primary: '', backup: '' };
+    const primaryDriver = mapping.primary ? S.drivers.find(d => d.id === mapping.primary) : null;
+    const backupDriver = mapping.backup ? S.drivers.find(d => d.id === mapping.backup) : null;
+    const custCount = allRecords().filter(r =>
+      S.territoryAssignments[r.dkwName] === terr && S.decisions[r.dkwName] !== 'inactivate'
+    ).length;
+
+    terrRows.push([
+      terr,
+      primaryDriver ? primaryDriver.name : '',
+      mapping.primary || '',
+      backupDriver ? backupDriver.name : '',
+      mapping.backup || '',
+      custCount,
+    ]);
+  });
+
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(terrRows), 'Territories');
+
+  // ── Sheet 5: Territory Polygons (KML vertex data for API geofences) ──
+  const polyRows = [['Territory', 'Vertex Index', 'Latitude', 'Longitude']];
+
+  if (typeof GEODATA !== 'undefined' && GEODATA && GEODATA.polygons) {
+    Object.entries(GEODATA.polygons).forEach(([name, vertices]) => {
+      vertices.forEach((v, i) => {
+        polyRows.push([name, i, v.lat, v.lng]);
+      });
+    });
+  }
+
+  if (polyRows.length > 1) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(polyRows), 'Territory Polygons');
+  }
+
+  // ── Write multi-sheet XLSX ───────────────────────────────────────────
+  const filename = 'KW_Samsara_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, filename);
+
+  const parts = [records.length + ' addresses'];
+  if (S.drivers.length) parts.push(S.drivers.length + ' drivers');
+  if (S.vehicles.length) parts.push(S.vehicles.length + ' vehicles');
+  if (S.territories.length) parts.push(S.territories.length + ' territories');
+  showToast('Exported ' + parts.join(', ') + '. ' + withGeo + ' with coordinates.');
 }
 
 // ── Verify Phase ───────────────────────────────────────────────────────────
@@ -1345,7 +2534,7 @@ function runVerification(wb) {
     if (action === 'rename') {
       const rec     = allRecords().find(r => r.dkwName === name);
       const newName = rec
-        ? (rec.suggestedName || rec.cleanName || name.replace(/^DKW[\s\-\u2013]*/i, '').trim())
+        ? getDisplayName(rec)
         : name.replace(/^DKW[\s\-\u2013]*/i, '').trim();
       const dkwGone = !newNames.has(name);
       const found   = newName && newNames.has(newName);
@@ -1452,7 +2641,8 @@ function runVerification(wb) {
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, activeTab: 'pairs', searchQuery: '' });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '' });
+  document.querySelectorAll('input[name="naming-std"]').forEach(r => { r.checked = r.value === 'dkw'; });
   show('phase-upload', true);
   show('phase-worklist', false);
   show('phase-verify', false);
@@ -1487,6 +2677,15 @@ document.getElementById('export-issues-btn').addEventListener('click', () => {
   const wbNew  = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbNew, wsNew, 'Remaining Issues');
   XLSX.writeFile(wbNew, 'KW-Cleanup-Remaining-Issues.xlsx');
+});
+
+// Naming standard selector
+document.querySelectorAll('input[name="naming-std"]').forEach(radio => {
+  radio.addEventListener('change', e => {
+    S.namingStandard = e.target.value;
+    persistState();
+    renderAll();
+  });
 });
 
 document.getElementById('header-reset-btn').addEventListener('click', () => {

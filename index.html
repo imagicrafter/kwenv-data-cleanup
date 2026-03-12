@@ -1484,9 +1484,13 @@ function renderTerritoryTab() {
   nameInput.style.width = '180px';
   nameInput.value = S._terrNameFilter || '';
   nameInput.addEventListener('input', e => {
+    const pos = e.target.selectionStart;
     S._terrNameFilter = e.target.value.trim().toLowerCase();
     S._territorySelected.clear();
     renderTerritoryTab();
+    // Restore focus and cursor position after re-render
+    const restored = wrap.querySelector('input[placeholder="Search by name\u2026"]');
+    if (restored) { restored.focus(); restored.setSelectionRange(pos, pos); }
   });
   toolbar.appendChild(nameInput);
 

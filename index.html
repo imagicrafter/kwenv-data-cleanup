@@ -556,11 +556,23 @@ function processWorkbook(wb) {
       .filter(Boolean).map(v => String(v).trim()).join(', ');
   }
 
-  // Pre-filter: exclude inactive and parent accounts
+  // Pre-filter: exclude inactive records and parent account rows
   let inactiveCount = 0;
   let parentCount = 0;
 
+  // Build set of parent account names — rows whose name is used as another row's
+  // Parent Account Name value. These are billing entities (e.g., "Dispatch",
+  // "Mahoney Environmental") with no real service location.
+  const parentNames = new Set();
+  if (iParent >= 0) {
+    data.forEach(r => {
+      const pv = String(r[iParent] || '').trim();
+      if (pv) parentNames.add(pv);
+    });
+  }
+
   const filtered = data.filter(r => {
+    const name = String(r[iName] || '').trim();
     // Exclude inactive records
     if (iActive >= 0) {
       const v = String(r[iActive] || '').trim().toLowerCase();
@@ -569,13 +581,10 @@ function processWorkbook(wb) {
         return false;
       }
     }
-    // Exclude parent accounts (rows that have a parent — are sub-accounts)
-    if (iParent >= 0) {
-      const parentName = String(r[iParent] || '').trim();
-      if (parentName) {
-        parentCount++;
-        return false;
-      }
+    // Exclude parent account rows (their name appears as another row's Parent Account Name)
+    if (parentNames.has(name)) {
+      parentCount++;
+      return false;
     }
     return true;
   });

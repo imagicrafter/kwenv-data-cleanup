@@ -319,6 +319,7 @@
       </div>
       <button class="export-btn secondary" id="export-decided-btn">⬇ Export Decided</button>
       <button class="export-btn primary" id="export-all-btn">⬇ Export All</button>
+      <button class="export-btn primary" id="export-inactivate-btn">⬇ Inactivate Checklist</button>
       <button class="export-btn secondary" id="export-samsara-btn">⬇ Samsara Export</button>
       <button class="export-btn secondary" id="import-samsara-btn">⬆ Samsara Import</button>
       <input type="file" id="samsara-import-input" accept=".xlsx,.csv" style="display:none" />
@@ -3410,6 +3411,7 @@ function showRestoreBanner(summary) {
 // Export
 document.getElementById('export-decided-btn').addEventListener('click', () => exportXlsx(false));
 document.getElementById('export-all-btn').addEventListener('click',     () => exportXlsx(true));
+document.getElementById('export-inactivate-btn').addEventListener('click', exportBulkInactivate);
 
 function exportXlsx(includeAll) {
   const records = includeAll
@@ -3534,6 +3536,142 @@ function exportXlsx(includeAll) {
   const xlsxFilename = 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx';
   XLSX.writeFile(wb, xlsxFilename, { cellStyles: true, bookSST: false, type: 'binary' });
   uploadExport(wb, xlsxFilename, includeAll ? 'all' : 'decided');
+}
+
+// ── Bulk Inactivate Checklist Export ───────────────────────────────────────
+function exportBulkInactivate() {
+  const safe = [...S.pairs].sort((a, b) => {
+    const ta = S.territoryAssignments[a.dkwName] || 'ZZZ';
+    const tb = S.territoryAssignments[b.dkwName] || 'ZZZ';
+    return ta.localeCompare(tb) || a.dkwName.localeCompare(b.dkwName);
+  });
+  const review = [...S.orphans].sort((a, b) => {
+    const ta = S.territoryAssignments[a.dkwName] || 'ZZZ';
+    const tb = S.territoryAssignments[b.dkwName] || 'ZZZ';
+    return ta.localeCompare(tb) || a.dkwName.localeCompare(b.dkwName);
+  });
+
+  if (!safe.length && !review.length) {
+    alert('No DKW records loaded. Please import a Service Fusion export first.');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: Safe to Inactivate ──
+  const SAFE_HEADER = ['\u2713', 'DKW ACCOUNT NAME', 'MATCHED CUSTOMER', 'MATCH TYPE', 'ADDRESS', 'TERRITORY', 'SF INSTRUCTIONS'];
+  const safeRows = safe.map(r => {
+    const territory = S.territoryAssignments[r.dkwName] || '';
+    const matchType = r.matchedBy === 'address' ? 'Address' : 'Name';
+    const instr = 'Search SF for "' + r.dkwName + '" \u2192 Set to Inactive. Customer "' + r.cleanName + '" verified.';
+    return ['', r.dkwName, r.cleanName || '', matchType, r.address || '', territory, instr];
+  });
+
+  const ws1 = XLSX.utils.aoa_to_sheet([SAFE_HEADER, ...safeRows]);
+  ws1['!cols'] = [
+    { wch: 4 },   // checkbox
+    { wch: 36 },  // DKW name
+    { wch: 36 },  // matched customer
+    { wch: 12 },  // match type
+    { wch: 38 },  // address
+    { wch: 22 },  // territory
+    { wch: 60 },  // instructions
+  ];
+  ws1['!views'] = [{ state: 'frozen', ySplit: 1 }];
+  ws1['!rows'] = [{ hpt: 22 }];
+
+  // Cell styles
+  const S_HDR = {
+    fill: { patternType: 'solid', fgColor: { rgb: '1A5C3A' } },
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' },
+    alignment: { vertical: 'center', horizontal: 'center', wrapText: false },
+    border: { bottom: { style: 'thin', color: { rgb: 'FFFFFF' } } }
+  };
+  const S_ROW_EVEN = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+    font: { sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center' }
+  };
+  const S_ROW_ODD = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'F8FAFC' } },
+    font: { sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center' }
+  };
+
+  SAFE_HEADER.forEach((_, c) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws1[addr]) ws1[addr].s = S_HDR;
+  });
+  safeRows.forEach((row, ri) => {
+    row.forEach((_, c) => {
+      const addr = XLSX.utils.encode_cell({ r: ri + 1, c });
+      if (ws1[addr]) ws1[addr].s = ri % 2 === 0 ? S_ROW_EVEN : S_ROW_ODD;
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Safe to Inactivate (' + safe.length + ')');
+
+  // ── Sheet 2: Review First ──
+  const REV_HEADER = ['\u2713', 'DKW ACCOUNT NAME', 'SUGGESTED CUSTOMER NAME', 'ADDRESS', 'TERRITORY', 'SF INSTRUCTIONS'];
+  const revRows = review.map(r => {
+    const territory = S.territoryAssignments[r.dkwName] || '';
+    const suggested = r.suggestedName || r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+    const instr = 'Search SF for customer "' + suggested + '". If found: inactivate "' + r.dkwName + '". If NOT found: check if still active before inactivating.';
+    return ['', r.dkwName, suggested, r.address || '', territory, instr];
+  });
+
+  const ws2 = XLSX.utils.aoa_to_sheet([REV_HEADER, ...revRows]);
+  ws2['!cols'] = [
+    { wch: 4 },   // checkbox
+    { wch: 36 },  // DKW name
+    { wch: 36 },  // suggested name
+    { wch: 38 },  // address
+    { wch: 22 },  // territory
+    { wch: 70 },  // instructions
+  ];
+  ws2['!views'] = [{ state: 'frozen', ySplit: 1 }];
+  ws2['!rows'] = [{ hpt: 22 }];
+
+  REV_HEADER.forEach((_, c) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws2[addr]) ws2[addr].s = S_HDR;
+  });
+  revRows.forEach((row, ri) => {
+    row.forEach((_, c) => {
+      const addr = XLSX.utils.encode_cell({ r: ri + 1, c });
+      if (ws2[addr]) ws2[addr].s = ri % 2 === 0 ? S_ROW_EVEN : S_ROW_ODD;
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws2, 'Review First (' + review.length + ')');
+
+  // ── Summary / Instructions sheet ──
+  const summaryData = [
+    ['KW Environmental \u2014 DKW Inactivation Checklist'],
+    ['Generated: ' + new Date().toLocaleString()],
+    [''],
+    ['SUMMARY'],
+    ['Safe to inactivate (matched pair found):', safe.length],
+    ['Review before inactivating (no match):', review.length],
+    ['Total DKW records:', safe.length + review.length],
+    [''],
+    ['HOW TO USE'],
+    ['1. Start with the "Safe to Inactivate" sheet \u2014 these have a verified customer account'],
+    ['2. Follow the SF Instructions column for each row'],
+    ['3. Mark the \u2713 column as you complete each one'],
+    ['4. Then work through "Review First" \u2014 search SF for each suggested name before inactivating'],
+    ['5. If a Review First record has no customer counterpart, do NOT inactivate (it may be the only record)'],
+  ];
+  const ws3 = XLSX.utils.aoa_to_sheet(summaryData);
+  ws3['!cols'] = [{ wch: 56 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Instructions');
+
+  // Move Instructions to first position
+  wb.SheetNames = ['Instructions', ...wb.SheetNames.filter(n => n !== 'Instructions')];
+
+  const filename = 'KW_Inactivate_Checklist_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, filename, { cellStyles: true, bookSST: false, type: 'binary' });
+  uploadExport(wb, filename, 'inactivate-checklist');
 }
 
 // ── Samsara CSV Export ─────────────────────────────────────────────────────

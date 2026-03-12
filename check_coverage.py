@@ -52,7 +52,7 @@ def main():
             break
 
     if not header_row:
-        print('ERROR: Could not find header row')
+        print('ERROR: Could not find header row', file=sys.stderr)
         sys.exit(1)
 
     def find_col(keywords):

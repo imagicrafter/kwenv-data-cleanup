@@ -135,6 +135,9 @@
     .dl-rename     { background: var(--warn-light); color: var(--warn); }
     .dl-keep       { background: var(--brand-light); color: var(--brand); }
     .dl-skip       { background: var(--neutral-light); color: var(--neutral); }
+    .type-badge { display: inline-block; border-radius: 99px; padding: 2px 8px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+    .type-paired     { background: var(--info-light); color: var(--info); }
+    .type-standalone { background: var(--warn-light); color: var(--warn); }
 
     .verify-zone { border: 2px dashed #a3e635; border-radius: var(--radius); padding: 24px; background: #f7fee7; text-align: center; margin-bottom: 24px; }
     .verify-zone h3 { font-size: 15px; font-weight: 700; color: #365314; margin-bottom: 8px; }
@@ -2697,7 +2700,7 @@ function parseSamsaraImport(file) {
     S.activeTab = 'samsara-sync';
     document.getElementById('tab-samsara-sync').classList.remove('hidden');
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === 'samsara-sync'));
-    document.querySelector('.toolbar').classList.add('hidden');
+    // Toolbar visibility will be set correctly by renderTable() via renderAll()
     renderAll();
     showToast(imported.length + ' addresses loaded from Samsara export.');
   };
@@ -3286,10 +3289,8 @@ function exportSamsaraCsv() {
     const name = getDisplayName(r);
     const territory = S.territoryAssignments[r.dkwName] || '';
 
-    let fullAddress = r.address;
-    if (r.city) fullAddress += ', ' + r.city;
-    if (r.state) fullAddress += ', ' + r.state;
-    if (r.zip) fullAddress += ' ' + r.zip;
+    // r.address is already built by buildAddress() which includes city/state/zip
+    const fullAddress = r.address || '';
 
     let lat = '';
     let lng = '';
@@ -3435,8 +3436,16 @@ function runVerification(wb) {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
   let hi = -1;
+  // Match the same logic as processWorkbook() — look for cell exactly equal to "Customer Name"
   for (let i = 0; i < Math.min(rows.length, 20); i++) {
-    if (rows[i] && rows[i].some(c => c && String(c).toLowerCase().includes('customer'))) { hi = i; break; }
+    const first = rows[i] && rows[i][0] ? String(rows[i][0]).trim() : '';
+    if (first === 'Customer Name') { hi = i; break; }
+  }
+  if (hi === -1) {
+    // Fallback: any cell exactly matching "Customer Name"
+    for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      if (rows[i] && rows[i].some(c => c && String(c).trim() === 'Customer Name')) { hi = i; break; }
+    }
   }
   if (hi === -1) { alert('Could not parse verification file.'); return; }
 
@@ -3478,6 +3487,7 @@ function runVerification(wb) {
         issues.push({ cls: 'vr-fail', icon: '\u26a0\ufe0f', label: 'Still needs attention', name, note: 'The DKW prefix hasn\u2019t been removed yet.',
           hint: 'Open Service Fusion \u2192 search for "' + name + '" \u2192 rename to "' + newName + '".' });
       } else {
+        issueCount++;
         issues.push({ cls: 'vr-warn', icon: '\ud83d\udd0d', label: 'Needs review', name, note: 'DKW name removed but "' + newName + '" wasn\u2019t found \u2014 may have been saved under a slightly different name.',
           hint: 'Search Service Fusion for "' + newName + '" to confirm. No action needed if the customer exists under a similar name.' });
       }
@@ -3491,7 +3501,7 @@ function runVerification(wb) {
   setStatsBar('verify-stats', [
     { cls: 'success', label: 'Completed', value: passCount },
     { cls: issueCount > 0 ? 'warn' : 'success',  label: 'Needs Attention', value: issueCount },
-    { cls: 'brand',   label: 'Total Checked', value: passCount + issueCount + issues.filter(r => r.cls === 'vr-warn').length },
+    { cls: 'brand',   label: 'Total Checked', value: passCount + issueCount },
   ]);
 
   // Summary message
@@ -3573,7 +3583,7 @@ function runVerification(wb) {
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '' });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '', drivers: [], vehicles: [], territoryDrivers: {}, _samsaraImport: null, _syncFilter: '' });
   document.querySelectorAll('input[name="naming-std"]').forEach(r => { r.checked = r.value === 'dkw'; });
   show('phase-upload', true);
   show('phase-worklist', false);

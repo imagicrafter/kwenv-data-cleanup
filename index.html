@@ -1486,7 +1486,7 @@ function renderTerritoryTab() {
   nameInput.value = S._terrNameFilter || '';
   nameInput.addEventListener('input', e => {
     const pos = e.target.selectionStart;
-    S._terrNameFilter = e.target.value.trim().toLowerCase();
+    S._terrNameFilter = e.target.value.toLowerCase();
     S._territorySelected.clear();
     renderTerritoryTab();
     // Restore focus and cursor position after re-render
@@ -1744,7 +1744,7 @@ function renderCustomersTab() {
   custNameInput.value = S._customerNameFilter || '';
   custNameInput.addEventListener('input', e => {
     const pos = e.target.selectionStart;
-    S._customerNameFilter = e.target.value.trim().toLowerCase();
+    S._customerNameFilter = e.target.value.toLowerCase();
     S._customerSelected.clear();
     renderCustomersTab();
     const restored = wrap.querySelector('input[placeholder="Search by name\u2026"]');

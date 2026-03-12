@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate geodata.js — geocoded locations with territory assignments via point-in-polygon."""
-import json, os, re, sys
+import json, math, os, re, sys
 from xml.etree import ElementTree as ET
 
 try:
@@ -30,6 +30,31 @@ def point_in_polygon(lat, lng, polygon):
             inside = not inside
         j = i
     return inside
+
+
+def haversine(lat1, lng1, lat2, lng2):
+    """Distance in km between two lat/lng points."""
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlng / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def nearest_territory(lat, lng, territories):
+    """Find nearest territory by distance to polygon centroid. Returns (name, distance_km)."""
+    best_name = None
+    best_dist = float('inf')
+    for t in territories:
+        clat = sum(p[1] for p in t['polygon']) / len(t['polygon'])
+        clng = sum(p[0] for p in t['polygon']) / len(t['polygon'])
+        d = haversine(lat, lng, clat, clng)
+        if d < best_dist:
+            best_dist = d
+            best_name = t['name']
+    return best_name, best_dist
 
 
 def parse_kml(path):
@@ -111,11 +136,11 @@ def main():
     for t in territories:
         print(f'  {t["name"]} ({len(t["polygon"])} vertices)')
 
-    # Point-in-polygon assignment
+    # Point-in-polygon assignment with nearest-centroid fallback
     territory_names = sorted(set(t['name'] for t in territories))
     location_map = {}
-    assigned = 0
-    unassigned_list = []
+    polygon_assigned = 0
+    nearest_assigned = 0
 
     for loc in locations:
         lat = float(loc['latitude'])
@@ -131,19 +156,18 @@ def main():
         entry = {'n': loc['name'], 'lat': lat, 'lng': lng}
         if territory:
             entry['t'] = territory
-            assigned += 1
+            polygon_assigned += 1
         else:
-            unassigned_list.append(loc['name'])
+            territory, dist_km = nearest_territory(lat, lng, territories)
+            entry['t'] = territory
+            entry['a'] = 'nearest'
+            nearest_assigned += 1
 
         # Keep first match if duplicate normalized names
         if n not in location_map:
             location_map[n] = entry
 
-    print(f'\nResults: {assigned} assigned, {len(unassigned_list)} unassigned')
-    if unassigned_list and len(unassigned_list) <= 20:
-        print('Unassigned locations:')
-        for name in unassigned_list:
-            print(f'  {name}')
+    print(f'\nResults: {polygon_assigned} polygon-assigned, {nearest_assigned} nearest-assigned, {polygon_assigned + nearest_assigned} total')
 
     # Build polygon map for export (territory name -> [{lat, lng}, ...])
     polygon_map = {}

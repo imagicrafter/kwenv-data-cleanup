@@ -1449,16 +1449,17 @@ function renderMapTab() {
     const addrText = document.createTextNode(r.address || '');
     popupEl.appendChild(addrText);
     popupEl.appendChild(document.createElement('br'));
+    const isNearest = geo.a === 'nearest';
     const terrEl = document.createElement('em');
-    terrEl.textContent = territory || 'Unassigned';
+    terrEl.textContent = (territory || 'Unassigned') + (isNearest ? ' (nearest)' : '');
     popupEl.appendChild(terrEl);
 
     const marker = L.circleMarker([geo.lat, geo.lng], {
-      radius: 5,
-      fillColor: color,
-      color: '#fff',
-      weight: 1,
-      fillOpacity: 0.8,
+      radius: isNearest ? 6 : 5,
+      fillColor: isNearest ? '#fff' : color,
+      color: isNearest ? color : '#fff',
+      weight: isNearest ? 2.5 : 1,
+      fillOpacity: isNearest ? 0.3 : 0.8,
     }).bindPopup(popupEl);
 
     _mapLayers[layerKey].addLayer(marker);

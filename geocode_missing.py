@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Geocode DKW records missing from Supabase locations using Geocodio, then merge into geodata.js."""
+"""Geocode all SF records (DKW + clean) missing from geodata.js using Geocodio, then merge with territory assignment."""
 import json, os, re, sys, time
 
 try:
@@ -77,13 +77,40 @@ def point_in_polygon(lat, lng, polygon):
     return inside
 
 
+def haversine(lat1, lng1, lat2, lng2):
+    """Distance in km between two lat/lng points."""
+    import math
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (math.sin(dlat / 2) ** 2 +
+         math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+         math.sin(dlng / 2) ** 2)
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def nearest_territory(lat, lng, territories):
+    """Find nearest territory by distance to polygon centroid. Returns (name, distance_km)."""
+    best_name = None
+    best_dist = float('inf')
+    for t in territories:
+        clat = sum(p[1] for p in t['polygon']) / len(t['polygon'])
+        clng = sum(p[0] for p in t['polygon']) / len(t['polygon'])
+        d = haversine(lat, lng, clat, clng)
+        if d < best_dist:
+            best_dist = d
+            best_name = t['name']
+    return best_name, best_dist
+
+
 def get_missing_addresses(geodata):
-    """Find DKW records in SF export that are NOT in geodata."""
+    """Find ALL records (DKW + clean) in SF export that are NOT in geodata."""
     wb = openpyxl.load_workbook(SF_EXPORT, read_only=True)
     ws = wb.active
 
     geo_names = set(geodata['locations'].keys())
     missing = []
+    seen_norms = set()
 
     # Find header row dynamically
     header_row = None
@@ -112,12 +139,15 @@ def get_missing_addresses(geodata):
 
     print(f'  Columns: name={col_name}, addr={col_addr}, city={col_city}, state={col_state}, zip={col_zip}')
 
+    dkw_count = 0
+    clean_count = 0
+
     for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
         name = str(row[col_name] or '').strip() if col_name is not None else ''
-        if not re.match(r'^DKW[\s\-\u2013]', name, re.I):
+        if not name:
             continue
         n = norm(name)
-        if n in geo_names:
+        if n in geo_names or n in seen_norms:
             continue
 
         address = str(row[col_addr] or '').strip() if col_addr is not None else ''
@@ -136,76 +166,63 @@ def get_missing_addresses(geodata):
         if zipcode:
             full_address += ' ' + zipcode
 
+        is_dkw = bool(re.match(r'^DKW[\s\-\u2013]', name, re.I))
+        # For display name, strip DKW prefix if present
+        display_name = re.sub(r'^DKW[\s\-\u2013]*', '', name, flags=re.I) if is_dkw else name
+
         missing.append({
             'norm': n,
             'name': name,
+            'display_name': display_name,
             'address': full_address,
         })
+        seen_norms.add(n)
+
+        if is_dkw:
+            dkw_count += 1
+        else:
+            clean_count += 1
 
     wb.close()
+    print(f'  Missing: {dkw_count} DKW + {clean_count} clean = {dkw_count + clean_count} total')
     return missing
 
 
 def geocode_batch(addresses, api_key):
-    """Geocode a list of addresses using Geocodio batch API."""
+    """Geocode addresses using Geocodio individual GET requests."""
     results = {}
-    batches = [addresses[i:i + BATCH_SIZE] for i in range(0, len(addresses), BATCH_SIZE)]
+    failed = 0
 
-    for batch_num, batch in enumerate(batches):
-        print(f'  Batch {batch_num + 1}/{len(batches)}: {len(batch)} addresses...')
-
-        # Geocodio batch endpoint accepts a list of address strings
-        addr_list = [item['address'] for item in batch]
-
-        resp = requests.post(
-            GEOCODIO_URL,
-            json=addr_list,
-            params={'api_key': api_key},
-            timeout=60,
-        )
-
-        if resp.status_code == 422:
-            # Some addresses may be unprocessable — try individually
-            print(f'    Batch failed with 422, falling back to individual requests...')
-            for item in batch:
-                try:
-                    single_resp = requests.get(
-                        GEOCODIO_URL,
-                        params={'q': item['address'], 'api_key': api_key},
-                        timeout=15,
-                    )
-                    if single_resp.status_code == 200:
-                        data = single_resp.json()
-                        if data.get('results') and len(data['results']) > 0:
-                            loc = data['results'][0]['location']
-                            results[item['norm']] = {
-                                'lat': loc['lat'],
-                                'lng': loc['lng'],
-                                'accuracy': data['results'][0].get('accuracy', 0),
-                            }
-                except Exception as e:
-                    print(f'    Failed: {item["name"]}: {e}')
-                time.sleep(0.1)  # Rate limit: 1000/min on free tier
-            continue
-
-        resp.raise_for_status()
-        data = resp.json()
-
-        # Batch response: {"results": [{"query": "...", "response": {"results": [...]}}]}
-        for i, result in enumerate(data.get('results', [])):
-            item = batch[i]
-            response = result.get('response', {})
-            if response.get('results') and len(response['results']) > 0:
-                loc = response['results'][0]['location']
-                results[item['norm']] = {
-                    'lat': loc['lat'],
-                    'lng': loc['lng'],
-                    'accuracy': response['results'][0].get('accuracy', 0),
-                }
-
-        # Small delay between batches
-        if batch_num < len(batches) - 1:
-            time.sleep(0.5)
+    for i, item in enumerate(addresses):
+        if (i + 1) % 50 == 0 or i == 0:
+            print(f'  Geocoding {i + 1}/{len(addresses)}...')
+        try:
+            resp = requests.get(
+                GEOCODIO_URL,
+                params={'q': item['address'], 'api_key': api_key},
+                timeout=15,
+            )
+            if resp.status_code == 403:
+                print(f'  403 at record {i + 1} — quota limit. Saving {len(results)} results.')
+                break
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get('results') and len(data['results']) > 0:
+                    loc = data['results'][0]['location']
+                    results[item['norm']] = {
+                        'lat': loc['lat'],
+                        'lng': loc['lng'],
+                        'accuracy': data['results'][0].get('accuracy', 0),
+                    }
+            else:
+                failed += 1
+        except Exception as e:
+            failed += 1
+            if failed <= 5:
+                print(f'  Failed: {item["display_name"]}: {e}')
+        # Rate limit: ~1000/min on free tier
+        if (i + 1) % 100 == 0:
+            time.sleep(1)
 
     return results
 
@@ -223,7 +240,7 @@ def main():
 
     # Find missing addresses
     missing = get_missing_addresses(geodata)
-    print(f'Missing DKW records needing geocoding: {len(missing)}')
+    print(f'Missing records needing geocoding: {len(missing)}')
 
     if not missing:
         print('Nothing to geocode!')
@@ -246,8 +263,8 @@ def main():
     print(f'Territory polygons: {len(territories)}')
 
     # Merge into geodata
-    assigned = 0
-    unassigned = 0
+    polygon_assigned = 0
+    nearest_assigned = 0
     for item in geocodable:
         geo = geocoded.get(item['norm'])
         if not geo:
@@ -261,23 +278,27 @@ def main():
                 break
 
         entry = {
-            'n': item['name'].replace(re.match(r'^DKW[\s\-\u2013]*', item['name'], re.I).group(), ''),
+            'n': item['display_name'],
             'lat': geo['lat'],
             'lng': geo['lng'],
         }
         if territory:
             entry['t'] = territory
-            assigned += 1
-        else:
-            unassigned += 1
+            polygon_assigned += 1
+        elif territories:
+            # Nearest-territory fallback
+            territory, dist_km = nearest_territory(geo['lat'], geo['lng'], territories)
+            entry['t'] = territory
+            entry['a'] = 'nearest'
+            nearest_assigned += 1
 
         # Only add if not already in geodata
         if item['norm'] not in geodata['locations']:
             geodata['locations'][item['norm']] = entry
 
     print(f'\nNew locations added: {len(geocoded)}')
-    print(f'  With territory: {assigned}')
-    print(f'  Outside territories: {unassigned}')
+    print(f'  Polygon-assigned: {polygon_assigned}')
+    print(f'  Nearest-assigned: {nearest_assigned}')
     print(f'Total locations now: {len(geodata["locations"])}')
 
     # Write updated geodata.js

@@ -312,9 +312,9 @@
     <div class="tabs" id="tabs">
       <button class="tab active" data-tab="pairs">✂️ Confirmed Pairs <span class="count" id="tab-pairs-count">0</span></button>
       <button class="tab" data-tab="orphans">🔍 Unmatched DKW <span class="count" id="tab-orphans-count">0</span></button>
+      <button class="tab" data-tab="customers">👥 All Customers <span class="count" id="tab-customers-count">0</span></button>
       <button class="tab" data-tab="done">✅ Decided <span class="count" id="tab-done-count">0</span></button>
       <button class="tab" data-tab="territories">📍 Territories <span class="count" id="tab-territories-count">0</span></button>
-      <button class="tab" data-tab="customers">👥 All Customers <span class="count" id="tab-customers-count">0</span></button>
       <button class="tab" data-tab="drivers">👤 Drivers <span class="count" id="tab-drivers-count">0</span></button>
       <button class="tab" data-tab="vehicles">🚛 Vehicles <span class="count" id="tab-vehicles-count">0</span></button>
       <button class="tab" data-tab="map">🗺️ Map</button>
@@ -749,13 +749,14 @@ function renderStats() {
 
   setText('tab-pairs-count',       pairsRemaining);
   setText('tab-orphans-count',     orphansRemaining);
-  setText('tab-done-count',        decided);
+  const custDecided = Object.keys(S.customerDecisions).length;
+  setText('tab-done-count',        decided + custDecided);
   setText('tab-territories-count', unassigned);
   setText('tab-drivers-count', S.drivers.length);
   setText('tab-vehicles-count', S.vehicles.length);
   const custUndecided = S.customers.filter(c => !S.customerDecisions[c.name]).length;
   setText('tab-customers-count', custUndecided);
-  setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
+  setText('export-summary',    `${decided} DKW + ${custDecided} customer decisions made. Export to share the action list.`);
 
   // Show naming bar only when there are pairs (naming standard matters for pairs with clean counterparts)
   show('naming-bar', S.pairs.length > 0);
@@ -835,6 +836,11 @@ function renderTable() {
     return;
   }
 
+  if (S.activeTab === 'done') {
+    renderDecidedTab();
+    return;
+  }
+
   if (S.activeTab === 'help') {
     const div = document.createElement('div');
     div.className = 'help-content';
@@ -853,7 +859,7 @@ function renderTable() {
       '<ul>',
       '<li><strong>Confirmed Pairs</strong> \u2014 DKW records that have a matching clean customer record. These are the dispatch-side duplicates. Decide to inactivate, rename, or skip each one.</li>',
       '<li><strong>Unmatched DKW</strong> \u2014 DKW records with no clean counterpart. These are likely old or inactive accounts. Rename them, mark inactive, or skip.</li>',
-      '<li><strong>Decided</strong> \u2014 All records you\'ve already made decisions on. You can undo any decision from here.</li>',
+      '<li><strong>Decided</strong> \u2014 All records you\'ve made decisions on, including both DKW cleanup actions and customer actions (inactivate/keep). You can undo any decision from here.</li>',
       '<li><strong>Territories</strong> \u2014 Assign DKW customer locations to territories. Filter by territory or zip code, select rows, and bulk-assign. Territories are auto-populated from your KML boundaries.</li>',
       '<li><strong>All Customers</strong> \u2014 Every non-DKW customer from your Service Fusion export. These are your real customer records (the invoicing side). Each is flagged as <em>Paired</em> (has a DKW counterpart being cleaned up) or <em>Standalone</em> (no DKW version). Filter by territory, zip, or type. Assign territories the same way as the Territories tab.</li>',
       '<li><strong>Drivers</strong> \u2014 Review and edit driver information. Update names, phone numbers, or status. Assign a primary and backup driver to each territory at the bottom.</li>',
@@ -901,7 +907,7 @@ function renderTable() {
     icon.className = 'icon';
     icon.textContent = '✅';
     const msg = document.createElement('p');
-    if (S.activeTab === 'done' && !Object.keys(S.decisions).length)
+    if (S.activeTab === 'done' && !Object.keys(S.decisions).length && !Object.keys(S.customerDecisions).length)
       msg.textContent = 'No decisions made yet. Work through the Confirmed Pairs and Unmatched DKW tabs.';
     else if (S.activeTab === 'pairs')
       msg.textContent = '🎉 All confirmed pairs decided!';
@@ -1025,6 +1031,190 @@ function renderTable() {
 
   table.appendChild(tbody);
   wrap.replaceChildren(table);
+}
+
+function renderDecidedTab() {
+  const wrap = document.getElementById('table-wrap');
+  const container = document.createElement('div');
+
+  const dkwDecided = allRecords().filter(r => S.decisions[r.dkwName]);
+  const custDecided = S.customers.filter(c => S.customerDecisions[c.name]);
+  const totalDecided = dkwDecided.length + custDecided.length;
+
+  // Empty state
+  if (totalDecided === 0) {
+    const div = document.createElement('div');
+    div.className = 'empty';
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = '✅';
+    const msg = document.createElement('p');
+    msg.textContent = 'No decisions made yet. Work through the Confirmed Pairs, Unmatched DKW, and All Customers tabs.';
+    div.appendChild(icon);
+    div.appendChild(msg);
+    wrap.replaceChildren(div);
+    return;
+  }
+
+  // Search filter helper
+  const q = S.searchQuery;
+  const matchesSearch = (text) => !q || (text && text.toLowerCase().includes(q));
+
+  // ── DKW Decisions ──
+  const filteredDkw = dkwDecided.filter(r =>
+    matchesSearch(r.dkwName) || matchesSearch(r.cleanName) || matchesSearch(r.address) ||
+    matchesSearch(S.territoryAssignments[r.dkwName])
+  );
+
+  if (filteredDkw.length > 0) {
+    const heading = document.createElement('h3');
+    heading.textContent = 'DKW Decisions (' + filteredDkw.length + ')';
+    heading.style.cssText = 'margin:12px 0 8px;font-size:14px;color:var(--text-muted)';
+    container.appendChild(heading);
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const hRow = document.createElement('tr');
+    ['#', 'DKW Record', 'Match / Rename', 'Address', 'Acct #', 'Action'].forEach(c => {
+      const th = document.createElement('th');
+      th.textContent = c;
+      hRow.appendChild(th);
+    });
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    filteredDkw.forEach((r, i) => {
+      const decided = S.decisions[r.dkwName];
+      const tr = document.createElement('tr');
+      tr.classList.add('decided');
+
+      appendTd(tr, String(i + 1), 'color:var(--text-muted);font-size:12px');
+
+      const nameTd = document.createElement('td');
+      const badge = document.createElement('span');
+      badge.className = 'dkw-badge';
+      badge.textContent = 'DKW';
+      const nameSp = document.createElement('span');
+      nameSp.className = 'customer-name';
+      nameSp.textContent = r.dkwName.replace(/^DKW[-\s]*/i, '');
+      nameTd.appendChild(badge);
+      nameTd.appendChild(nameSp);
+      tr.appendChild(nameTd);
+
+      const matchTd = document.createElement('td');
+      if (r.cleanName) {
+        const sp = document.createElement('span');
+        sp.className = 'clean-match';
+        sp.textContent = '✓ ' + r.cleanName;
+        matchTd.appendChild(sp);
+      } else {
+        const to = document.createElement('span');
+        to.className = 'rename-to';
+        to.textContent = '→ ' + (r.suggestedName || '');
+        matchTd.appendChild(to);
+      }
+      tr.appendChild(matchTd);
+
+      const addrTd = document.createElement('td');
+      const addrSp = document.createElement('span');
+      addrSp.className = 'address-cell';
+      addrSp.title = r.address || '';
+      addrSp.textContent = r.address || '—';
+      addrTd.appendChild(addrSp);
+      tr.appendChild(addrTd);
+
+      appendTd(tr, r.acctNum || '—', 'font-size:12px;color:var(--text-muted);text-align:center');
+
+      const actionTd = document.createElement('td');
+      const lbl = document.createElement('span');
+      lbl.className = 'decided-label dl-' + decided;
+      lbl.textContent = decided.toUpperCase();
+      const undoBtn = document.createElement('button');
+      undoBtn.className = 'action-btn ab-undo';
+      undoBtn.textContent = 'Undo';
+      undoBtn.style.marginLeft = '6px';
+      undoBtn.dataset.name = r.dkwName;
+      undoBtn.addEventListener('click', handleUndo);
+      actionTd.appendChild(lbl);
+      actionTd.appendChild(undoBtn);
+      tr.appendChild(actionTd);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+
+  // ── Customer Decisions ──
+  const filteredCust = custDecided.filter(c =>
+    matchesSearch(c.name) || matchesSearch(c.address) || matchesSearch(c.city) ||
+    matchesSearch(c.zip) || matchesSearch(S.customerTerritories[c.name])
+  );
+
+  if (filteredCust.length > 0) {
+    const heading = document.createElement('h3');
+    heading.textContent = 'Customer Decisions (' + filteredCust.length + ')';
+    heading.style.cssText = 'margin:16px 0 8px;font-size:14px;color:var(--text-muted)';
+    container.appendChild(heading);
+
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const hRow = document.createElement('tr');
+    ['#', 'Customer Name', 'Address', 'City', 'Zip', 'Type', 'Territory', 'Action'].forEach(c => {
+      const th = document.createElement('th');
+      th.textContent = c;
+      hRow.appendChild(th);
+    });
+    thead.appendChild(hRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    filteredCust.forEach((c, i) => {
+      const action = S.customerDecisions[c.name];
+      const tr = document.createElement('tr');
+      tr.classList.add('decided');
+      if (action === 'inactivate') tr.style.opacity = '0.5';
+
+      appendTd(tr, String(i + 1), 'color:var(--text-muted);font-size:12px');
+      appendTd(tr, c.name);
+      appendTd(tr, c.address || '—');
+      appendTd(tr, c.city || '—');
+      appendTd(tr, c.zip || '—');
+
+      const typeTd = document.createElement('td');
+      const typeBadge = document.createElement('span');
+      typeBadge.className = c.paired ? 'type-badge type-paired' : 'type-badge type-standalone';
+      typeBadge.textContent = c.paired ? 'Paired' : 'Standalone';
+      typeTd.appendChild(typeBadge);
+      tr.appendChild(typeTd);
+
+      appendTd(tr, S.customerTerritories[c.name] || '—');
+
+      const actionTd = document.createElement('td');
+      const lbl = document.createElement('span');
+      lbl.className = 'decided-label dl-' + action;
+      lbl.textContent = action === 'keep' ? 'KEEP' : action.toUpperCase();
+      const undoBtn = document.createElement('button');
+      undoBtn.className = 'action-btn ab-undo';
+      undoBtn.textContent = 'Undo';
+      undoBtn.style.marginLeft = '6px';
+      undoBtn.addEventListener('click', () => {
+        delete S.customerDecisions[c.name];
+        persistState();
+        renderAll();
+      });
+      actionTd.appendChild(lbl);
+      actionTd.appendChild(undoBtn);
+      tr.appendChild(actionTd);
+
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
+  }
+
+  wrap.replaceChildren(container);
 }
 
 function appendTd(tr, text, style) {
@@ -3039,7 +3229,34 @@ function exportXlsx(includeAll) {
   });
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Cleanup Actions');
+  XLSX.utils.book_append_sheet(wb, ws, 'DKW Cleanup');
+
+  // Customer decisions sheet
+  const custRecords = includeAll
+    ? S.customers
+    : S.customers.filter(c => S.customerDecisions[c.name] && S.customerDecisions[c.name] !== 'skip');
+
+  if (custRecords.length > 0) {
+    const CUST_HEADER = ['ACTION', 'CUSTOMER NAME', 'ADDRESS', 'CITY', 'ZIP', 'TERRITORY', 'TYPE'];
+    const custRows = custRecords.map(c => {
+      const action = (S.customerDecisions[c.name] || 'pending').toUpperCase();
+      const territory = S.customerTerritories[c.name] || '';
+      const type = c.paired ? 'Paired' : 'Standalone';
+      return [action, c.name, c.address || '', c.city || '', c.zip || '', territory, type];
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet([CUST_HEADER, ...custRows]);
+    ws2['!cols'] = [
+      { wch: 13 },  // ACTION
+      { wch: 36 },  // CUSTOMER NAME
+      { wch: 38 },  // ADDRESS
+      { wch: 18 },  // CITY
+      { wch: 10 },  // ZIP
+      { wch: 22 },  // TERRITORY
+      { wch: 12 },  // TYPE
+    ];
+    XLSX.utils.book_append_sheet(wb, ws2, 'Customer Actions');
+  }
+
   XLSX.writeFile(wb, 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx',
     { cellStyles: true, bookSST: false, type: 'binary' });
 }

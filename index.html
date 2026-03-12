@@ -313,6 +313,7 @@
       <button class="tab" data-tab="orphans">🔍 Unmatched DKW <span class="count" id="tab-orphans-count">0</span></button>
       <button class="tab" data-tab="done">✅ Decided <span class="count" id="tab-done-count">0</span></button>
       <button class="tab" data-tab="territories">📍 Territories <span class="count" id="tab-territories-count">0</span></button>
+      <button class="tab" data-tab="customers">👥 All Customers <span class="count" id="tab-customers-count">0</span></button>
       <button class="tab" data-tab="drivers">👤 Drivers <span class="count" id="tab-drivers-count">0</span></button>
       <button class="tab" data-tab="vehicles">🚛 Vehicles <span class="count" id="tab-vehicles-count">0</span></button>
       <button class="tab" data-tab="map">🗺️ Map</button>
@@ -380,6 +381,12 @@ const S = {
   _territoryFilter: '',
   _samsaraImport: null,  // parsed Samsara export data: [{name, address, lat, lng, tags, type, ...}]
   _syncFilter: '',       // '', 'match', 'mismatch', 'missing', 'extra'
+  customers:            [],   // [{name, address, city, state, zip, agent, acctNum, paired}]
+  customerTerritories:  {},   // clean customer name -> territory name
+  _customerSelected: new Set(),
+  _customerZipFilter: '',
+  _customerTerritoryFilter: '',
+  _customerTypeFilter: '',   // '' | 'standalone' | 'paired'
 };
 
 // ── Normalize name — strips DKW prefix, removes non-alphanumeric, uppercases
@@ -533,6 +540,28 @@ function processWorkbook(wb) {
     }
   });
 
+  // Capture all clean (non-DKW) customer records
+  const dkwNorms = new Set(S.pairs.map(r => norm(r.dkwName))
+    .concat(S.orphans.map(r => norm(r.dkwName))));
+
+  S.customers = [];
+  S.customerTerritories = {};
+  cleanRows.forEach(r => {
+    const name = String(r[iName]).trim();
+    if (!name) return;
+    const n = norm(name);
+    S.customers.push({
+      name,
+      address: buildAddress(r),
+      city:    r[iCity]    ? String(r[iCity]).trim()     : '',
+      state:   r[iState]   ? String(r[iState]).trim()    : '',
+      zip:     r[iZip]     ? String(r[iZip]).trim()      : '',
+      agent:   r[iAgent]   ? String(r[iAgent]).trim()    : '',
+      acctNum: r[iAcctNum] ? String(r[iAcctNum]).trim()  : '',
+      paired:  dkwNorms.has(n),
+    });
+  });
+
   // Restore saved state by matching on dkwName (resilient across exports)
   const currentNames = new Set(allRecords().map(r => r.dkwName));
   const saved = loadSession();
@@ -586,6 +615,15 @@ function processWorkbook(wb) {
         }
       });
 
+      // Restore customer territory assignments
+      if (saved.customerTerritories) {
+        S.customers.forEach(c => {
+          if (saved.customerTerritories[c.name]) {
+            S.customerTerritories[c.name] = saved.customerTerritories[c.name];
+          }
+        });
+      }
+
       // Compute delta summary
       const recordsGone = [...prevNames].filter(n => !currentNames.has(n));
       const recordsNew  = [...currentNames].filter(n => !prevNames.has(n));
@@ -621,6 +659,21 @@ function processWorkbook(wb) {
     });
     if (autoAssigned > 0) {
       showToast(autoAssigned + ' customers auto-assigned to territories from location data.');
+    }
+
+    // Auto-assign territories for clean customers from geodata
+    let custAutoAssigned = 0;
+    S.customers.forEach(c => {
+      if (S.customerTerritories[c.name]) return;
+      const n = norm(c.name);
+      const geo = GEODATA.locations[n];
+      if (geo && geo.t) {
+        S.customerTerritories[c.name] = geo.t;
+        custAutoAssigned++;
+      }
+    });
+    if (custAutoAssigned > 0) {
+      showToast(custAutoAssigned + ' SF customers auto-assigned to territories.');
     }
   }
 
@@ -674,6 +727,7 @@ function renderStats() {
     { cls: 'warn',    label: 'To Rename',           value: rename },
     { cls: 'success', label: 'Decided',             value: decided },
     { cls: 'brand',   label: 'Territories Assigned', value: terrAssigned, tip: terrTip },
+    { cls: 'info',    label: 'SF Customers',          value: S.customers.length },
   ]);
 
   const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
@@ -689,6 +743,8 @@ function renderStats() {
   setText('tab-territories-count', unassigned);
   setText('tab-drivers-count', S.drivers.length);
   setText('tab-vehicles-count', S.vehicles.length);
+  const custUnassigned = S.customers.filter(c => !S.customerTerritories[c.name]).length;
+  setText('tab-customers-count', custUnassigned);
   setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
 
   // Show naming bar only when there are pairs (naming standard matters for pairs with clean counterparts)
@@ -741,6 +797,11 @@ function renderTable() {
 
   if (S.activeTab === 'territories') {
     renderTerritoryTab();
+    return;
+  }
+
+  if (S.activeTab === 'customers') {
+    renderCustomersTab();
     return;
   }
 
@@ -1071,6 +1132,9 @@ function renderTerritoryTab() {
       Object.keys(S.territoryAssignments).forEach(k => {
         if (S.territoryAssignments[k] === t) delete S.territoryAssignments[k];
       });
+      Object.keys(S.customerTerritories).forEach(k => {
+        if (S.customerTerritories[k] === t) delete S.customerTerritories[k];
+      });
       persistState();
       renderAll();
     });
@@ -1308,6 +1372,268 @@ function renderTerritoryTab() {
   wrap.appendChild(table);
 }
 
+// ── All Customers Tab ─────────────────────────────────────────────────────
+function renderCustomersTab() {
+  const wrap = document.getElementById('table-wrap');
+  wrap.replaceChildren();
+
+  // Get records with filters
+  let records = [...S.customers];
+
+  // Territory filter
+  if (S._customerTerritoryFilter) {
+    if (S._customerTerritoryFilter === '__unassigned__') {
+      records = records.filter(c => !S.customerTerritories[c.name]);
+    } else {
+      records = records.filter(c => S.customerTerritories[c.name] === S._customerTerritoryFilter);
+    }
+  }
+
+  // Zip filter
+  if (S._customerZipFilter) {
+    records = records.filter(c => c.zip && c.zip.startsWith(S._customerZipFilter));
+  }
+
+  // Paired/standalone filter
+  if (S._customerTypeFilter === 'standalone') {
+    records = records.filter(c => !c.paired);
+  } else if (S._customerTypeFilter === 'paired') {
+    records = records.filter(c => c.paired);
+  }
+
+  // Toolbar
+  const toolbar = document.createElement('div');
+  toolbar.className = 'terr-toolbar';
+
+  const terrFilter = document.createElement('select');
+  terrFilter.className = 'territory-select';
+  terrFilter.style.width = '160px';
+  const allOpt = document.createElement('option');
+  allOpt.value = '';
+  allOpt.textContent = 'All Territories';
+  terrFilter.appendChild(allOpt);
+  const unOpt = document.createElement('option');
+  unOpt.value = '__unassigned__';
+  unOpt.textContent = 'Unassigned';
+  terrFilter.appendChild(unOpt);
+  S.territories.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t;
+    opt.textContent = t;
+    opt.selected = (t === S._customerTerritoryFilter);
+    terrFilter.appendChild(opt);
+  });
+  if (S._customerTerritoryFilter === '__unassigned__') unOpt.selected = true;
+  terrFilter.addEventListener('change', e => {
+    S._customerTerritoryFilter = e.target.value;
+    S._customerSelected.clear();
+    renderCustomersTab();
+  });
+  toolbar.appendChild(terrFilter);
+
+  const zipInput = document.createElement('input');
+  zipInput.className = 'zip-filter';
+  zipInput.type = 'text';
+  zipInput.placeholder = 'Filter by zip\u2026';
+  zipInput.value = S._customerZipFilter;
+  zipInput.addEventListener('input', e => {
+    S._customerZipFilter = e.target.value.trim();
+    S._customerSelected.clear();
+    renderCustomersTab();
+  });
+  toolbar.appendChild(zipInput);
+
+  const typeFilter = document.createElement('select');
+  typeFilter.className = 'territory-select';
+  typeFilter.style.width = '140px';
+  [['', 'All Types'], ['standalone', 'Standalone Only'], ['paired', 'Paired Only']].forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    opt.selected = (val === S._customerTypeFilter);
+    typeFilter.appendChild(opt);
+  });
+  typeFilter.addEventListener('change', e => {
+    S._customerTypeFilter = e.target.value;
+    S._customerSelected.clear();
+    renderCustomersTab();
+  });
+  toolbar.appendChild(typeFilter);
+
+  const countSpan = document.createElement('span');
+  countSpan.className = 'terr-count';
+  const assigned = records.filter(c => S.customerTerritories[c.name]).length;
+  countSpan.textContent = records.length + ' customers shown \u00b7 ' + assigned + ' assigned';
+  toolbar.appendChild(countSpan);
+
+  const assignGroup = document.createElement('div');
+  assignGroup.className = 'terr-assign-group';
+
+  const assignBtn = document.createElement('button');
+  assignBtn.className = 'terr-assign-btn';
+  assignBtn.textContent = 'Assign Selected';
+  assignBtn.disabled = S._customerSelected.size === 0;
+  assignBtn.addEventListener('click', () => {
+    if (S._customerSelected.size === 0) { alert('Check the rows you want to assign.'); return; }
+    let territory = S._customerTerritoryFilter && S._customerTerritoryFilter !== '__unassigned__' ? S._customerTerritoryFilter : null;
+    if (!territory) {
+      territory = prompt('Enter territory name to assign:\n\nAvailable: ' + S.territories.join(', '));
+      if (!territory || !territory.trim()) return;
+      territory = territory.trim();
+      if (!S.territories.includes(territory)) {
+        S.territories.push(territory);
+        S.territories.sort();
+      }
+    }
+    const count = S._customerSelected.size;
+    S._customerSelected.forEach(name => {
+      S.customerTerritories[name] = territory;
+    });
+    S._customerSelected.clear();
+    persistState();
+    renderAll();
+    showToast('Assigned "' + territory + '" to ' + count + ' customers.');
+  });
+  assignGroup.appendChild(assignBtn);
+  toolbar.appendChild(assignGroup);
+  wrap.appendChild(toolbar);
+
+  if (records.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    const icon = document.createElement('div');
+    icon.className = 'icon';
+    icon.textContent = '\ud83d\udc65';
+    const p = document.createElement('p');
+    p.textContent = S._customerZipFilter ? 'No customers match this zip code.' : 'No customers to display. Upload a Service Fusion export.';
+    empty.appendChild(icon);
+    empty.appendChild(p);
+    wrap.appendChild(empty);
+    return;
+  }
+
+  // Table
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const hRow = document.createElement('tr');
+
+  // Select all header
+  const thCheck = document.createElement('th');
+  thCheck.style.width = '40px';
+  const selectAll = document.createElement('input');
+  selectAll.type = 'checkbox';
+  selectAll.className = 'terr-check';
+  selectAll.checked = records.length > 0 && records.every(c => S._customerSelected.has(c.name));
+  selectAll.addEventListener('change', () => {
+    if (selectAll.checked) {
+      records.forEach(c => S._customerSelected.add(c.name));
+    } else {
+      records.forEach(c => S._customerSelected.delete(c.name));
+    }
+    renderCustomersTab();
+  });
+  thCheck.appendChild(selectAll);
+  hRow.appendChild(thCheck);
+
+  ['Customer Name', 'Address', 'City', 'Zip', 'Agent', 'Type', 'Territory'].forEach(col => {
+    const th = document.createElement('th');
+    th.textContent = col;
+    hRow.appendChild(th);
+  });
+  thead.appendChild(hRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  records.forEach(c => {
+    const tr = document.createElement('tr');
+
+    // Checkbox
+    const tdCheck = document.createElement('td');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'terr-check';
+    cb.checked = S._customerSelected.has(c.name);
+    cb.addEventListener('change', () => {
+      if (cb.checked) S._customerSelected.add(c.name);
+      else S._customerSelected.delete(c.name);
+      const assignBtnEl = wrap.querySelector('.terr-assign-btn');
+      if (assignBtnEl) assignBtnEl.disabled = S._customerSelected.size === 0;
+      selectAll.checked = records.every(c2 => S._customerSelected.has(c2.name));
+    });
+    tdCheck.appendChild(cb);
+    tr.appendChild(tdCheck);
+
+    // Customer name
+    appendTd(tr, c.name, 'font-weight:600;font-size:13px');
+
+    // Address
+    const addrTd = document.createElement('td');
+    const addrSp = document.createElement('span');
+    addrSp.className = 'address-cell';
+    addrSp.title = c.address || '';
+    addrSp.textContent = c.address || '\u2014';
+    addrTd.appendChild(addrSp);
+    tr.appendChild(addrTd);
+
+    // City
+    appendTd(tr, c.city || '\u2014', 'font-size:12px;color:var(--text-muted)');
+
+    // Zip
+    appendTd(tr, c.zip || '\u2014', 'font-size:12px;font-weight:600');
+
+    // Agent
+    appendTd(tr, c.agent || '\u2014', 'font-size:12px;color:var(--text-muted)');
+
+    // Type (paired/standalone)
+    const typeTd = document.createElement('td');
+    const typeSpan = document.createElement('span');
+    typeSpan.style.cssText = 'font-size:11px; padding:2px 8px; border-radius:99px; font-weight:600;';
+    if (c.paired) {
+      typeSpan.style.background = 'var(--info-light)';
+      typeSpan.style.color = 'var(--info)';
+      typeSpan.textContent = 'Paired';
+    } else {
+      typeSpan.style.background = 'var(--warn-light)';
+      typeSpan.style.color = 'var(--warn)';
+      typeSpan.textContent = 'Standalone';
+    }
+    typeTd.appendChild(typeSpan);
+    tr.appendChild(typeTd);
+
+    // Territory assignment
+    const terrTd = document.createElement('td');
+    terrTd.className = 'territory-cell';
+    const currentTerr = S.customerTerritories[c.name];
+    if (currentTerr) {
+      const terrLabel = document.createElement('span');
+      terrLabel.className = 'terr-pill';
+      terrLabel.style.fontSize = '11px';
+      terrLabel.appendChild(txt(currentTerr));
+      const clearBtn = document.createElement('button');
+      clearBtn.className = 'terr-x';
+      clearBtn.textContent = '\u00d7';
+      clearBtn.addEventListener('click', () => {
+        delete S.customerTerritories[c.name];
+        persistState();
+        renderAll();
+      });
+      terrLabel.appendChild(clearBtn);
+      terrTd.appendChild(terrLabel);
+    } else {
+      const dash = document.createElement('span');
+      dash.style.cssText = 'color:var(--text-muted);font-size:12px';
+      dash.textContent = '\u2014 unassigned';
+      terrTd.appendChild(dash);
+    }
+    tr.appendChild(terrTd);
+
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+}
+
 // ── Samsara seed data ─────────────────────────────────────────────────────
 const SEED_DRIVERS = [
   { id: 'WilliamEmerson001', name: 'William Emerson', phone: '', status: 'active', samsaraId: '52903307' },
@@ -1450,6 +1776,55 @@ function renderMapTab() {
     popupEl.appendChild(addrText);
     popupEl.appendChild(document.createElement('br'));
     const isNearest = geo.a === 'nearest';
+    const terrEl = document.createElement('em');
+    terrEl.textContent = (territory || 'Unassigned') + (isNearest ? ' (nearest)' : '');
+    popupEl.appendChild(terrEl);
+
+    const marker = L.circleMarker([geo.lat, geo.lng], {
+      radius: isNearest ? 6 : 5,
+      fillColor: isNearest ? '#fff' : color,
+      color: isNearest ? color : '#fff',
+      weight: isNearest ? 2.5 : 1,
+      fillOpacity: isNearest ? 0.3 : 0.8,
+    }).bindPopup(popupEl);
+
+    _mapLayers[layerKey].addLayer(marker);
+    bounds.extend([geo.lat, geo.lng]);
+    pinCount++;
+    if (!territory) unassignedCount++;
+  });
+
+  // Add clean customer pins (skip if already plotted via DKW record)
+  const plottedNorms = new Set();
+  recs.forEach(r => {
+    if (S.decisions[r.dkwName] === 'inactivate') return;
+    plottedNorms.add(norm(r.dkwName));
+  });
+
+  S.customers.forEach(c => {
+    const n = norm(c.name);
+    if (plottedNorms.has(n)) return;
+    const geo = (typeof GEODATA !== 'undefined' && GEODATA.locations)
+      ? GEODATA.locations[n]
+      : null;
+    if (!geo || !geo.lat || !geo.lng) return;
+
+    const territory = S.customerTerritories[c.name] || geo.t || null;
+    const color = territory ? territoryColor(territory) : '#94a3b8';
+    const layerKey = territory || '__unassigned__';
+
+    if (!_mapLayers[layerKey]) {
+      _mapLayers[layerKey] = L.layerGroup();
+    }
+
+    const isNearest = geo.a === 'nearest';
+    const popupEl = document.createElement('div');
+    const nameEl = document.createElement('strong');
+    nameEl.textContent = c.name;
+    popupEl.appendChild(nameEl);
+    popupEl.appendChild(document.createElement('br'));
+    popupEl.appendChild(document.createTextNode(c.address || ''));
+    popupEl.appendChild(document.createElement('br'));
     const terrEl = document.createElement('em');
     terrEl.textContent = (territory || 'Unassigned') + (isNearest ? ' (nearest)' : '');
     popupEl.appendChild(terrEl);
@@ -2308,7 +2683,7 @@ document.getElementById('tabs').addEventListener('click', e => {
   S._zipFilter = '';
   S._territoryFilter = '';
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === S.activeTab));
-  const hideToolbar = S.activeTab === 'help' || S.activeTab === 'territories' || S.activeTab === 'drivers' || S.activeTab === 'vehicles' || S.activeTab === 'map' || S.activeTab === 'samsara-sync';
+  const hideToolbar = S.activeTab === 'help' || S.activeTab === 'territories' || S.activeTab === 'customers' || S.activeTab === 'drivers' || S.activeTab === 'vehicles' || S.activeTab === 'map' || S.activeTab === 'samsara-sync';
   document.querySelector('.toolbar').classList.toggle('hidden', hideToolbar);
   show('bulk-inactivate-btn', S.activeTab === 'pairs');
   show('bulk-rename-btn',     S.activeTab === 'orphans');
@@ -2353,6 +2728,8 @@ function persistState() {
       drivers: S.drivers,
       vehicles: S.vehicles,
       territoryDrivers: S.territoryDrivers,
+      customerTerritories: S.customerTerritories,
+      customerNames: S.customers.map(c => c.name),
       dkwNames,
       savedAt: Date.now()
     }));
@@ -2374,6 +2751,8 @@ function loadSession() {
       drivers: data.drivers || [],
       vehicles: data.vehicles || [],
       territoryDrivers: data.territoryDrivers || {},
+      customerTerritories: data.customerTerritories || {},
+      customerNames: data.customerNames || [],
       dkwNames: data.dkwNames || [],
     };
   } catch (e) {
@@ -2875,7 +3254,7 @@ function runVerification(wb) {
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '' });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '' });
   document.querySelectorAll('input[name="naming-std"]').forEach(r => { r.checked = r.value === 'dkw'; });
   show('phase-upload', true);
   show('phase-worklist', false);

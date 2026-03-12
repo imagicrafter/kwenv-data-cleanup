@@ -796,9 +796,13 @@ function renderStats() {
   const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
   const orphansRemaining = S.orphans.filter(r => !S.decisions[r.dkwName]).length;
 
-  const unassigned = allRecords().filter(r =>
+  const dkwUnassigned = allRecords().filter(r =>
     S.decisions[r.dkwName] !== 'inactivate' && !S.territoryAssignments[r.dkwName]
   ).length;
+  const custUnassigned = S.customers.filter(c =>
+    S.customerDecisions[c.name] !== 'inactivate' && !S.customerTerritories[c.name]
+  ).length;
+  const unassigned = dkwUnassigned + custUnassigned;
 
   setText('tab-pairs-count',       pairsRemaining);
   setText('tab-orphans-count',     orphansRemaining);
@@ -1414,15 +1418,51 @@ function renderTerritoryTab() {
   manager.appendChild(addBtn);
   wrap.appendChild(manager);
 
-  // Get records: all NOT inactivated
-  let records = allRecords().filter(r => S.decisions[r.dkwName] !== 'inactivate');
+  // Get records: DKW (not inactivated) + clean customers (not inactivated)
+  // Unified record format: { _key, _name, address, city, zip, _source }
+  const dkwRecs = allRecords()
+    .filter(r => S.decisions[r.dkwName] !== 'inactivate')
+    .map(r => ({
+      _key: r.dkwName,
+      _name: getDisplayName(r),
+      address: r.address,
+      city: r.city,
+      zip: r.zip,
+      _source: 'dkw',
+    }));
+  const custRecs = S.customers
+    .filter(c => S.customerDecisions[c.name] !== 'inactivate')
+    .map(c => ({
+      _key: 'cust:' + c.name,
+      _name: c.name,
+      address: c.address,
+      city: c.city,
+      zip: c.zip,
+      _source: 'customer',
+    }));
+
+  // Helper: get/set territory for a unified record
+  function getTerritory(rec) {
+    if (rec._source === 'dkw') return S.territoryAssignments[rec._key] || '';
+    return S.customerTerritories[rec._key.slice(5)] || '';
+  }
+  function setTerritory(rec, territory) {
+    if (rec._source === 'dkw') S.territoryAssignments[rec._key] = territory;
+    else S.customerTerritories[rec._key.slice(5)] = territory;
+  }
+  function clearTerritory(rec) {
+    if (rec._source === 'dkw') delete S.territoryAssignments[rec._key];
+    else delete S.customerTerritories[rec._key.slice(5)];
+  }
+
+  let records = [...dkwRecs, ...custRecs];
 
   // Apply filters
   if (S._territoryFilter) {
     if (S._territoryFilter === '__unassigned__') {
-      records = records.filter(r => !S.territoryAssignments[r.dkwName]);
+      records = records.filter(r => !getTerritory(r));
     } else {
-      records = records.filter(r => S.territoryAssignments[r.dkwName] === S._territoryFilter);
+      records = records.filter(r => getTerritory(r) === S._territoryFilter);
     }
   }
   if (S._zipFilter) {
@@ -1430,10 +1470,7 @@ function renderTerritoryTab() {
   }
   if (S._terrNameFilter) {
     const q = S._terrNameFilter;
-    records = records.filter(r => {
-      const displayName = (S._namingStandard === 'dkw' ? r.suggestedName || r.dkwName : r.cleanName || r.dkwName) || '';
-      return displayName.toLowerCase().includes(q);
-    });
+    records = records.filter(r => r._name.toLowerCase().includes(q));
   }
 
   // Toolbar: zip filter + name search + count + assign group
@@ -1497,7 +1534,7 @@ function renderTerritoryTab() {
 
   const countSpan = document.createElement('span');
   countSpan.className = 'terr-count';
-  const assigned = records.filter(r => S.territoryAssignments[r.dkwName]).length;
+  const assigned = records.filter(r => getTerritory(r)).length;
   countSpan.textContent = records.length + ' customers shown \u00b7 ' + assigned + ' assigned';
   toolbar.appendChild(countSpan);
 
@@ -1522,8 +1559,10 @@ function renderTerritoryTab() {
       }
     }
     const count = S._territorySelected.size;
-    S._territorySelected.forEach(name => {
-      S.territoryAssignments[name] = territory;
+    const allMerged = [...dkwRecs, ...custRecs];
+    S._territorySelected.forEach(key => {
+      const rec = allMerged.find(r => r._key === key);
+      if (rec) setTerritory(rec, territory);
     });
     S._territorySelected.clear();
     persistState();
@@ -1559,12 +1598,12 @@ function renderTerritoryTab() {
   const selectAll = document.createElement('input');
   selectAll.type = 'checkbox';
   selectAll.className = 'terr-check';
-  selectAll.checked = records.length > 0 && records.every(r => S._territorySelected.has(r.dkwName));
+  selectAll.checked = records.length > 0 && records.every(r => S._territorySelected.has(r._key));
   selectAll.addEventListener('change', () => {
     if (selectAll.checked) {
-      records.forEach(r => S._territorySelected.add(r.dkwName));
+      records.forEach(r => S._territorySelected.add(r._key));
     } else {
-      records.forEach(r => S._territorySelected.delete(r.dkwName));
+      records.forEach(r => S._territorySelected.delete(r._key));
     }
     renderTerritoryTab();
   });
@@ -1588,20 +1627,20 @@ function renderTerritoryTab() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'terr-check';
-    cb.checked = S._territorySelected.has(r.dkwName);
+    cb.checked = S._territorySelected.has(r._key);
     cb.addEventListener('change', () => {
-      if (cb.checked) S._territorySelected.add(r.dkwName);
-      else S._territorySelected.delete(r.dkwName);
+      if (cb.checked) S._territorySelected.add(r._key);
+      else S._territorySelected.delete(r._key);
       // Update assign button state and select-all
       const assignBtnEl = wrap.querySelector('.terr-assign-btn');
       if (assignBtnEl) assignBtnEl.disabled = S._territorySelected.size === 0;
-      selectAll.checked = records.every(r2 => S._territorySelected.has(r2.dkwName));
+      selectAll.checked = records.every(r2 => S._territorySelected.has(r2._key));
     });
     tdCheck.appendChild(cb);
     tr.appendChild(tdCheck);
 
-    // Customer name (use display name based on naming standard)
-    appendTd(tr, getDisplayName(r), 'font-weight:600;font-size:13px');
+    // Customer name
+    appendTd(tr, r._name, 'font-weight:600;font-size:13px');
 
     // Address
     const addrTd = document.createElement('td');
@@ -1621,7 +1660,7 @@ function renderTerritoryTab() {
     // Territory assignment
     const terrTd = document.createElement('td');
     terrTd.className = 'territory-cell';
-    const currentTerr = S.territoryAssignments[r.dkwName];
+    const currentTerr = getTerritory(r);
     if (currentTerr) {
       const terrLabel = document.createElement('span');
       terrLabel.className = 'terr-pill';
@@ -1631,7 +1670,7 @@ function renderTerritoryTab() {
       clearBtn.className = 'terr-x';
       clearBtn.textContent = '\u00d7';
       clearBtn.addEventListener('click', () => {
-        delete S.territoryAssignments[r.dkwName];
+        clearTerritory(r);
         persistState();
         renderAll();
       });

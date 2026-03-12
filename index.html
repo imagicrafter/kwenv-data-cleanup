@@ -439,6 +439,7 @@ const S = {
   customerDecisions:    {},   // clean customer name -> 'inactivate'|'keep'|'skip'
   _customerSelected: new Set(),
   _customerZipFilter: '',
+  _customerNameFilter: '',
   _customerTerritoryFilter: '',
   _customerTypeFilter: '',   // '' | 'standalone' | 'paired'
   _customerStatusFilter: '', // '' | 'undecided' | 'inactivate' | 'keep'
@@ -1680,6 +1681,12 @@ function renderCustomersTab() {
     records = records.filter(c => c.paired);
   }
 
+  // Name filter
+  if (S._customerNameFilter) {
+    const q = S._customerNameFilter;
+    records = records.filter(c => c.name.toLowerCase().includes(q));
+  }
+
   // Status filter
   if (S._customerStatusFilter === 'undecided') {
     records = records.filter(c => !S.customerDecisions[c.name]);
@@ -1728,6 +1735,22 @@ function renderCustomersTab() {
     renderCustomersTab();
   });
   toolbar.appendChild(zipInput);
+
+  const custNameInput = document.createElement('input');
+  custNameInput.className = 'zip-filter';
+  custNameInput.type = 'text';
+  custNameInput.placeholder = 'Search by name\u2026';
+  custNameInput.style.width = '180px';
+  custNameInput.value = S._customerNameFilter || '';
+  custNameInput.addEventListener('input', e => {
+    const pos = e.target.selectionStart;
+    S._customerNameFilter = e.target.value.trim().toLowerCase();
+    S._customerSelected.clear();
+    renderCustomersTab();
+    const restored = wrap.querySelector('input[placeholder="Search by name\u2026"]');
+    if (restored) { restored.focus(); restored.setSelectionRange(pos, pos); }
+  });
+  toolbar.appendChild(custNameInput);
 
   const typeFilter = document.createElement('select');
   typeFilter.className = 'territory-select';

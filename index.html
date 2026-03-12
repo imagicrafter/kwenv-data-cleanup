@@ -60,6 +60,7 @@
     .stat-card.warn .value { color: var(--warn); }
     .stat-card.info .value { color: var(--info); }
     .stat-card.success .value { color: #059669; }
+    .stat-card.neutral .value { color: var(--neutral); }
 
     .progress-wrap { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 20px; }
     .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
@@ -443,11 +444,23 @@ const S = {
   _customerTerritoryFilter: '',
   _customerTypeFilter: '',   // '' | 'standalone' | 'paired'
   _customerStatusFilter: '', // '' | 'undecided' | 'inactivate' | 'keep'
+  _excludedInactive: 0,
+  _excludedParent: 0,
 };
 
 // ── Normalize name — strips DKW prefix, removes non-alphanumeric, uppercases
 const norm = name =>
   name.replace(/^DKW[\s\-\u2013]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+// Normalize address for matching — strips suffixes, punctuation, whitespace
+function normAddr(addr1, city, state, zip) {
+  if (!addr1) return '';
+  let s = [addr1, city, state, zip].filter(Boolean).map(v => String(v).trim()).join(' ').toUpperCase();
+  // Remove common street suffixes so "123 Main St" matches "123 Main Street"
+  s = s.replace(/\b(STREET|AVENUE|DRIVE|BOULEVARD|LANE|COURT|CIRCLE|PLACE|TRAIL|PARKWAY|PKWY)\b/g, '')
+       .replace(/\b(ST|AVE|DR|BLVD|LN|CT|CIR|PL|TRL|PKY|RD|ROAD|WAY)\b/g, '');
+  return s.replace(/[^A-Z0-9]/g, '');
+}
 
 // ── Accessors ──────────────────────────────────────────────────────────────
 function allRecords() { return [...S.pairs, ...S.orphans]; }
@@ -542,13 +555,45 @@ function processWorkbook(wb) {
       .filter(Boolean).map(v => String(v).trim()).join(', ');
   }
 
-  const dkwRows   = data.filter(r => /^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
-  const cleanRows = data.filter(r => !/^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+  // Pre-filter: exclude inactive and parent accounts
+  let inactiveCount = 0;
+  let parentCount = 0;
 
-  const cleanMap = {};
+  const filtered = data.filter(r => {
+    // Exclude inactive records
+    if (iActive >= 0) {
+      const v = String(r[iActive] || '').trim().toLowerCase();
+      if (v === 'false' || v === 'no' || v === '0') {
+        inactiveCount++;
+        return false;
+      }
+    }
+    // Exclude parent accounts (rows that have a parent — are sub-accounts)
+    if (iParent >= 0) {
+      const parentName = String(r[iParent] || '').trim();
+      if (parentName) {
+        parentCount++;
+        return false;
+      }
+    }
+    return true;
+  });
+
+  S._excludedInactive = inactiveCount;
+  S._excludedParent = parentCount;
+
+  const dkwRows   = filtered.filter(r => /^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+  const cleanRows = filtered.filter(r => !/^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+
+  // Build dual indexes for matching: address-primary, name-fallback
+  const cleanByAddr = {};
+  const cleanByName = {};
   cleanRows.forEach(r => {
-    const n = norm(String(r[iName]));
-    if (n) cleanMap[n] = r;
+    const name = String(r[iName]).trim();
+    const n = norm(name);
+    const a = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
+    if (a) cleanByAddr[a] = r;
+    if (n) cleanByName[n] = r;
   });
 
   S.pairs     = [];
@@ -569,18 +614,23 @@ function processWorkbook(wb) {
     const acctNum   = r[iAcctNum] ? String(r[iAcctNum]).trim()  : '';
     const suggested = dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
 
-    if (cleanMap[n]) {
-      const cr = cleanMap[n];
+    // Match by address first, then by name
+    const dkwAddr = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
+    const addrMatch = dkwAddr ? cleanByAddr[dkwAddr] : null;
+    const nameMatch = cleanByName[n];
+    const match = addrMatch || nameMatch;
+    const matchedBy = addrMatch ? 'address' : (nameMatch ? 'name' : null);
+
+    if (match) {
       S.pairs.push({
         dkwName,
-        cleanName:  String(cr[iName]).trim(),
-        cleanAgent: cr[iAgent]   ? String(cr[iAgent]).trim()   : '',
-        cleanAcct:  cr[iAcctNum] ? String(cr[iAcctNum]).trim() : '',
+        cleanName:  String(match[iName]).trim(),
+        cleanAgent: match[iAgent]   ? String(match[iAgent]).trim()   : '',
+        cleanAcct:  match[iAcctNum] ? String(match[iAcctNum]).trim() : '',
         address, city, state, zip,
-        agent,
-        created,
-        acctNum,
+        agent, created, acctNum,
         rec: 'inactivate',
+        matchedBy,
       });
     } else {
       S.orphans.push({
@@ -588,17 +638,20 @@ function processWorkbook(wb) {
         suggestedName: suggested,
         cleanName: null,
         address, city, state, zip,
-        agent,
-        created,
-        acctNum,
+        agent, created, acctNum,
         rec: 'rename',
       });
     }
   });
 
-  // Capture all clean (non-DKW) customer records
+  // Build sets for marking clean customers as paired
   const dkwNorms = new Set(S.pairs.map(r => norm(r.dkwName))
     .concat(S.orphans.map(r => norm(r.dkwName))));
+  const dkwAddrSet = new Set();
+  dkwRows.forEach(r => {
+    const a = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
+    if (a) dkwAddrSet.add(a);
+  });
 
   S.customers = [];
   S.customerTerritories = {};
@@ -606,6 +659,7 @@ function processWorkbook(wb) {
     const name = String(r[iName]).trim();
     if (!name) return;
     const n = norm(name);
+    const a = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
     S.customers.push({
       name,
       address: buildAddress(r),
@@ -614,7 +668,7 @@ function processWorkbook(wb) {
       zip:     r[iZip]     ? String(r[iZip]).trim()      : '',
       agent:   r[iAgent]   ? String(r[iAgent]).trim()    : '',
       acctNum: r[iAcctNum] ? String(r[iAcctNum]).trim()  : '',
-      paired:  dkwNorms.has(n),
+      paired:  dkwNorms.has(n) || (a && dkwAddrSet.has(a)),
     });
   });
 
@@ -782,7 +836,8 @@ function renderStats() {
     .map(([name, count]) => name + ': ' + count)
     .join(', ') || 'No territories assigned yet';
 
-  setStatsBar('stats-bar', [
+  const excluded = (S._excludedInactive || 0) + (S._excludedParent || 0);
+  const statsCards = [
     { cls: 'brand',   label: 'Total DKW Records',  value: total },
     { cls: 'danger',  label: 'Confirmed Pairs',     value: S.pairs.length },
     { cls: 'warn',    label: 'Unmatched DKW',       value: S.orphans.length },
@@ -791,7 +846,42 @@ function renderStats() {
     { cls: 'success', label: 'Decided',             value: decided },
     { cls: 'brand',   label: 'Territories Assigned', value: terrAssigned, tip: terrTip },
     { cls: 'info',    label: 'SF Customers',          value: S.customers.length },
-  ]);
+  ];
+  if (excluded > 0) {
+    const exParts = [];
+    if (S._excludedInactive > 0) exParts.push(S._excludedInactive + ' inactive');
+    if (S._excludedParent > 0) exParts.push(S._excludedParent + ' parent accounts');
+    statsCards.push({ cls: 'neutral', label: 'Excluded', value: excluded, tip: 'Filtered out: ' + exParts.join(', ') });
+  }
+  setStatsBar('stats-bar', statsCards);
+
+  // Filter exclusion banner
+  const oldBanner = document.getElementById('filter-banner');
+  if (oldBanner) oldBanner.remove();
+
+  if (excluded > 0) {
+    const statsBar = document.getElementById('stats-bar');
+    const banner = document.createElement('div');
+    banner.id = 'filter-banner';
+    banner.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;font-size:13px;color:#1e40af;';
+
+    const bParts = [];
+    if (S._excludedInactive > 0) bParts.push(S._excludedInactive + ' inactive');
+    if (S._excludedParent > 0) bParts.push(S._excludedParent + ' parent accounts');
+
+    const bText = document.createElement('span');
+    bText.style.flex = '1';
+    bText.textContent = 'Excluded from audit: ' + bParts.join(', ') + ' (' + excluded + ' total filtered)';
+    banner.appendChild(bText);
+
+    const dismiss = document.createElement('button');
+    dismiss.textContent = '\u2715';
+    dismiss.style.cssText = 'background:none;border:none;color:#1e40af;cursor:pointer;font-size:16px;padding:0 4px;';
+    dismiss.onclick = () => banner.remove();
+    banner.appendChild(dismiss);
+
+    statsBar.parentNode.insertBefore(banner, statsBar.nextSibling);
+  }
 
   const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
   const orphansRemaining = S.orphans.filter(r => !S.decisions[r.dkwName]).length;
@@ -1021,6 +1111,13 @@ function renderTable() {
       const sp = document.createElement('span');
       sp.className   = 'clean-match';
       sp.textContent = '✓ ' + r.cleanName;
+      if (r.matchedBy) {
+        const mbBadge = document.createElement('span');
+        mbBadge.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:1px 5px;border-radius:3px;margin-left:6px;' +
+          (r.matchedBy === 'address' ? 'background:#dbeafe;color:#1d4ed8;' : 'background:#e0e7ff;color:#4338ca;');
+        mbBadge.textContent = r.matchedBy === 'address' ? 'addr match' : 'name match';
+        sp.appendChild(mbBadge);
+      }
       const sub = document.createElement('span');
       sub.className   = 'sub-note';
       sub.textContent = (r.cleanJobs || 0) + ' jobs on clean record';
@@ -3752,7 +3849,7 @@ function runVerification(wb) {
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '' });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '', _excludedInactive: 0, _excludedParent: 0 });
   document.querySelectorAll('input[name="naming-std"]').forEach(r => { r.checked = r.value === 'dkw'; });
   show('phase-upload', true);
   show('phase-worklist', false);

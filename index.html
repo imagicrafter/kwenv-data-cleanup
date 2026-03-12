@@ -251,7 +251,9 @@
     .sync-filter-bar { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
     .sync-filter-bar select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
     #map-container { z-index: 1; }
-    .legend-item { display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px; }
+    .leaflet-control-layers label { display:flex !important; align-items:center !important; gap:4px; margin-bottom:2px; }
+    .leaflet-control-layers-overlays { padding:4px 0; }
+    .legend-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap; }
     .legend-dot { width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex-shrink:0; }
   </style>
 </head>
@@ -1473,15 +1475,14 @@ function renderMapTab() {
       }
       const color = territoryColor(terr);
       const latlngs = vertices.map(v => [v.lat, v.lng]);
-      const popupEl = document.createElement('strong');
-      popupEl.textContent = terr;
       const polygon = L.polygon(latlngs, {
         color: color,
         weight: 2,
         fillColor: color,
         fillOpacity: 0.1,
         dashArray: '5,5',
-      }).bindPopup(popupEl);
+        interactive: false,
+      });
 
       _mapLayers[terr].addLayer(polygon);
       latlngs.forEach(ll => bounds.extend(ll));

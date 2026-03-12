@@ -133,6 +133,7 @@
     .decided-label { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; display: inline-block; }
     .dl-inactivate { background: var(--danger-light); color: var(--danger); }
     .dl-rename     { background: var(--warn-light); color: var(--warn); }
+    .dl-keep       { background: var(--brand-light); color: var(--brand); }
     .dl-skip       { background: var(--neutral-light); color: var(--neutral); }
 
     .verify-zone { border: 2px dashed #a3e635; border-radius: var(--radius); padding: 24px; background: #f7fee7; text-align: center; margin-bottom: 24px; }
@@ -383,10 +384,12 @@ const S = {
   _syncFilter: '',       // '', 'match', 'mismatch', 'missing', 'extra'
   customers:            [],   // [{name, address, city, state, zip, agent, acctNum, paired}]
   customerTerritories:  {},   // clean customer name -> territory name
+  customerDecisions:    {},   // clean customer name -> 'inactivate'|'keep'|'skip'
   _customerSelected: new Set(),
   _customerZipFilter: '',
   _customerTerritoryFilter: '',
   _customerTypeFilter: '',   // '' | 'standalone' | 'paired'
+  _customerStatusFilter: '', // '' | 'undecided' | 'inactivate' | 'keep'
 };
 
 // ── Normalize name — strips DKW prefix, removes non-alphanumeric, uppercases
@@ -615,11 +618,18 @@ function processWorkbook(wb) {
         }
       });
 
-      // Restore customer territory assignments
+      // Restore customer territory assignments and decisions
       if (saved.customerTerritories) {
         S.customers.forEach(c => {
           if (saved.customerTerritories[c.name]) {
             S.customerTerritories[c.name] = saved.customerTerritories[c.name];
+          }
+        });
+      }
+      if (saved.customerDecisions) {
+        S.customers.forEach(c => {
+          if (saved.customerDecisions[c.name]) {
+            S.customerDecisions[c.name] = saved.customerDecisions[c.name];
           }
         });
       }
@@ -743,8 +753,8 @@ function renderStats() {
   setText('tab-territories-count', unassigned);
   setText('tab-drivers-count', S.drivers.length);
   setText('tab-vehicles-count', S.vehicles.length);
-  const custUnassigned = S.customers.filter(c => !S.customerTerritories[c.name]).length;
-  setText('tab-customers-count', custUnassigned);
+  const custUndecided = S.customers.filter(c => !S.customerDecisions[c.name]).length;
+  setText('tab-customers-count', custUndecided);
   setText('export-summary',    `${decided} of ${total} decisions made. Export to share the action list.`);
 
   // Show naming bar only when there are pairs (naming standard matters for pairs with clean counterparts)
@@ -828,52 +838,55 @@ function renderTable() {
   if (S.activeTab === 'help') {
     const div = document.createElement('div');
     div.className = 'help-content';
+    // Help content — all static strings, no user data, innerHTML is safe here
     div.innerHTML = [
       '<h3>What this app does</h3>',
-      '<p>This tool helps clean up and organize your KW Environmental fleet data for import into Fleetillo. Upload your Service Fusion customer list export to review DKW-prefixed duplicate records, assign territories, manage drivers and vehicles, and export everything ready for the Samsara API.</p>',
+      '<p>This tool helps clean up your KW Environmental customer data in Service Fusion and organize it for Fleetillo. Upload your Service Fusion customer list export to review DKW-prefixed duplicates, see your full customer base, assign territories, manage drivers and vehicles, and export everything for Samsara.</p>',
 
       '<h3>Your data stays local</h3>',
-      '<p>Everything runs in your browser. No data is uploaded to any server. Your decisions, territory assignments, driver info, and vehicle data are saved automatically in your browser\'s local storage.</p>',
+      '<p>Everything runs in your browser. No data is uploaded to any server. Your decisions, territory assignments, and all other data are saved automatically in your browser\'s local storage.</p>',
 
       '<h3>Picking up where you left off</h3>',
-      '<p>When you upload the same or an updated export, the app restores all your previous work automatically. If the export has changed (records added or removed), a banner shows what carried forward.</p>',
+      '<p>When you upload the same or an updated export, the app restores your previous work automatically. If the export has changed (records added or removed), a banner shows what carried forward and what\'s new.</p>',
 
-      '<h3>Tabs overview</h3>',
+      '<h3>Tabs</h3>',
       '<ul>',
-      '<li><strong>Confirmed Pairs</strong> — DKW records that have a matching clean customer record. Decide to inactivate, rename, or skip each one.</li>',
-      '<li><strong>Unmatched DKW</strong> — DKW records with no clean counterpart. Rename them, mark inactive, or skip for now.</li>',
-      '<li><strong>Decided</strong> — All records you\'ve already made decisions on. Undo any decision from here.</li>',
-      '<li><strong>Territories</strong> — Assign customer locations to territories. Territories and assignments are auto-populated from your Google My Maps KML data and geocoded locations. Filter by territory or zip code, select rows, and click "Assign Selected".</li>',
-      '<li><strong>Drivers</strong> — Review and edit driver information from Samsara. Update names, phone numbers, or status. At the bottom, assign a primary and backup driver to each territory.</li>',
-      '<li><strong>Vehicles</strong> — Confirm vehicle fleet information. Edit names, review make/model/VIN, and assign a driver to each vehicle.</li>',
-      '<li><strong>Samsara Sync</strong> — After importing addresses to Samsara, upload the Samsara address export here to compare against app data and troubleshoot any mismatches. This tab appears after your first Samsara import.</li>',
+      '<li><strong>Confirmed Pairs</strong> \u2014 DKW records that have a matching clean customer record. These are the dispatch-side duplicates. Decide to inactivate, rename, or skip each one.</li>',
+      '<li><strong>Unmatched DKW</strong> \u2014 DKW records with no clean counterpart. These are likely old or inactive accounts. Rename them, mark inactive, or skip.</li>',
+      '<li><strong>Decided</strong> \u2014 All records you\'ve already made decisions on. You can undo any decision from here.</li>',
+      '<li><strong>Territories</strong> \u2014 Assign DKW customer locations to territories. Filter by territory or zip code, select rows, and bulk-assign. Territories are auto-populated from your KML boundaries.</li>',
+      '<li><strong>All Customers</strong> \u2014 Every non-DKW customer from your Service Fusion export. These are your real customer records (the invoicing side). Each is flagged as <em>Paired</em> (has a DKW counterpart being cleaned up) or <em>Standalone</em> (no DKW version). Filter by territory, zip, or type. Assign territories the same way as the Territories tab.</li>',
+      '<li><strong>Drivers</strong> \u2014 Review and edit driver information. Update names, phone numbers, or status. Assign a primary and backup driver to each territory at the bottom.</li>',
+      '<li><strong>Vehicles</strong> \u2014 Review vehicle fleet information. Edit names, make/model/VIN, and assign a driver to each vehicle.</li>',
+      '<li><strong>Map</strong> \u2014 Visual map of all customer locations color-coded by territory, with territory boundary polygons. Solid dots are locations inside a territory boundary. Open dots are locations outside all boundaries, assigned to the nearest territory. Use the layer control to toggle territories on/off. Download KML to share territory boundaries.</li>',
+      '<li><strong>Samsara Sync</strong> \u2014 Compare your app data against a Samsara address export to find mismatches. This tab appears after you upload a Samsara export via the "Samsara Import" button.</li>',
       '</ul>',
 
       '<h3>Naming standard</h3>',
-      '<p>The naming standard selector (above the tabs) controls how customer names appear when renaming. <strong>DKW Format</strong> uses the original DKW formatting (Title Case with punctuation like Applebee\'s #1025138). <strong>SF Format</strong> uses the clean record format as-is from Service Fusion. This setting also affects exported names.</p>',
+      '<p>The naming standard selector (above the tabs) controls how customer names appear. <strong>DKW Format</strong> uses Title Case with punctuation (e.g., Applebee\'s #1025138). <strong>SF Format</strong> uses the name as-is from the clean Service Fusion record. This also affects exported names.</p>',
 
       '<h3>Exports</h3>',
       '<ul>',
-      '<li><strong>Export Decided</strong> — Only records you\'ve made decisions on (excludes skipped). Use this to share the action list with your team for Service Fusion cleanup.</li>',
-      '<li><strong>Export All</strong> — All records with their current status, including undecided.</li>',
-      '<li><strong>Samsara Export</strong> — Multi-sheet XLSX with 5 tabs: Addresses (customer locations with lat/lng, territory/driver/vehicle tags), Drivers, Vehicles, Territories (with primary and backup driver assignments), and Territory Polygons (KML vertex data for creating polygon geofences via the Samsara API).</li>',
-      '<li><strong>Samsara Import</strong> — Upload a Samsara address export to compare against your app data in the Samsara Sync tab.</li>',
+      '<li><strong>Export Decided</strong> \u2014 Records you\'ve made decisions on (excludes skipped). Share this with your team for Service Fusion cleanup.</li>',
+      '<li><strong>Export All</strong> \u2014 All DKW records with their current status, including undecided.</li>',
+      '<li><strong>Samsara Export</strong> \u2014 Multi-sheet XLSX: Addresses (with lat/lng and territory/driver/vehicle tags), Drivers, Vehicles, Territories (with driver assignments), and Territory Polygons (for Samsara geofences).</li>',
+      '<li><strong>Samsara Import</strong> \u2014 Upload a Samsara address export to compare in the Samsara Sync tab.</li>',
       '</ul>',
 
       '<h3>Auto-populated data</h3>',
-      '<p>When you upload an export, the app automatically:</p>',
+      '<p>On upload, the app automatically:</p>',
       '<ul>',
-      '<li>Loads 11 territory boundaries from your Google My Maps KML file</li>',
-      '<li>Matches ~858 customer locations to territories using geocoded coordinates</li>',
-      '<li>Pre-loads 8 drivers from your Samsara account with known territory assignments</li>',
-      '<li>Pre-loads 11 vehicles from your Samsara fleet with driver assignments</li>',
+      '<li>Loads 11 territory boundaries from the embedded KML data</li>',
+      '<li>Assigns customer locations to territories using geocoded coordinates and territory boundaries</li>',
+      '<li>Locations inside a boundary get a direct assignment; locations outside all boundaries are assigned to the nearest territory</li>',
+      '<li>Pre-loads drivers and vehicles from Samsara seed data with known territory assignments</li>',
       '</ul>',
 
       '<h3>Verify cleanup</h3>',
-      '<p>After your team completes the actions in Service Fusion, upload a fresh SF export using the verify button at the bottom of the page to confirm changes were applied correctly. The verification compares your decisions against the new export and flags anything still outstanding.</p>',
+      '<p>After your team completes the cleanup actions in Service Fusion, upload a fresh export using the "Upload Post-Cleanup Export" button at the bottom. The app compares your decisions against the new export and flags anything still outstanding.</p>',
 
       '<h3>Reset</h3>',
-      '<p>The reset button in the header clears all saved data including decisions, territories, drivers, and vehicles. This is the only way to lose your work (besides clearing your browser data).</p>',
+      '<p>The reset button in the header clears all saved data \u2014 decisions, territories, customers, drivers, and vehicles. This cannot be undone.</p>',
     ].join('\n');
     wrap.replaceChildren(div);
     return;
@@ -1401,6 +1414,13 @@ function renderCustomersTab() {
     records = records.filter(c => c.paired);
   }
 
+  // Status filter
+  if (S._customerStatusFilter === 'undecided') {
+    records = records.filter(c => !S.customerDecisions[c.name]);
+  } else if (S._customerStatusFilter) {
+    records = records.filter(c => S.customerDecisions[c.name] === S._customerStatusFilter);
+  }
+
   // Toolbar
   const toolbar = document.createElement('div');
   toolbar.className = 'terr-toolbar';
@@ -1460,10 +1480,27 @@ function renderCustomersTab() {
   });
   toolbar.appendChild(typeFilter);
 
+  const statusFilter = document.createElement('select');
+  statusFilter.className = 'territory-select';
+  statusFilter.style.width = '140px';
+  [['', 'All Statuses'], ['undecided', 'Undecided'], ['keep', 'Kept'], ['inactivate', 'Inactivated']].forEach(([val, label]) => {
+    const opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = label;
+    opt.selected = (val === S._customerStatusFilter);
+    statusFilter.appendChild(opt);
+  });
+  statusFilter.addEventListener('change', e => {
+    S._customerStatusFilter = e.target.value;
+    S._customerSelected.clear();
+    renderCustomersTab();
+  });
+  toolbar.appendChild(statusFilter);
+
   const countSpan = document.createElement('span');
   countSpan.className = 'terr-count';
-  const assigned = records.filter(c => S.customerTerritories[c.name]).length;
-  countSpan.textContent = records.length + ' customers shown \u00b7 ' + assigned + ' assigned';
+  const decided = records.filter(c => S.customerDecisions[c.name]).length;
+  countSpan.textContent = records.length + ' shown \u00b7 ' + decided + ' decided';
   toolbar.appendChild(countSpan);
 
   const assignGroup = document.createElement('div');
@@ -1535,7 +1572,7 @@ function renderCustomersTab() {
   thCheck.appendChild(selectAll);
   hRow.appendChild(thCheck);
 
-  ['Customer Name', 'Address', 'City', 'Zip', 'Agent', 'Type', 'Territory'].forEach(col => {
+  ['Customer Name', 'Address', 'City', 'Zip', 'Agent', 'Type', 'Territory', 'Action'].forEach(col => {
     const th = document.createElement('th');
     th.textContent = col;
     hRow.appendChild(th);
@@ -1626,6 +1663,46 @@ function renderCustomersTab() {
       terrTd.appendChild(dash);
     }
     tr.appendChild(terrTd);
+
+    // Action column
+    const actionTd = document.createElement('td');
+    const custDecision = S.customerDecisions[c.name];
+    if (custDecision) {
+      const lbl = document.createElement('span');
+      lbl.className = 'decided-label dl-' + custDecision;
+      lbl.textContent = custDecision === 'keep' ? 'KEEP' : custDecision.toUpperCase();
+      const undoBtn = document.createElement('button');
+      undoBtn.className = 'action-btn ab-undo';
+      undoBtn.textContent = 'Undo';
+      undoBtn.style.marginLeft = '6px';
+      undoBtn.addEventListener('click', () => {
+        delete S.customerDecisions[c.name];
+        persistState();
+        renderAll();
+      });
+      actionTd.appendChild(lbl);
+      actionTd.appendChild(undoBtn);
+      tr.style.opacity = custDecision === 'inactivate' ? '0.5' : '';
+    } else {
+      const div = document.createElement('div');
+      div.className = 'actions';
+      [
+        { action: 'inactivate', label: 'Inactivate', cls: 'ab-inactivate' },
+        { action: 'keep',       label: 'Keep',       cls: 'ab-skip' },
+      ].forEach(({ action, label, cls }) => {
+        const btn = document.createElement('button');
+        btn.className = 'action-btn ' + cls;
+        btn.textContent = label;
+        btn.addEventListener('click', () => {
+          S.customerDecisions[c.name] = action;
+          persistState();
+          renderAll();
+        });
+        div.appendChild(btn);
+      });
+      actionTd.appendChild(div);
+    }
+    tr.appendChild(actionTd);
 
     tbody.appendChild(tr);
   });
@@ -1802,6 +1879,7 @@ function renderMapTab() {
   });
 
   S.customers.forEach(c => {
+    if (S.customerDecisions[c.name] === 'inactivate') return;
     const n = norm(c.name);
     if (plottedNorms.has(n)) return;
     const geo = (typeof GEODATA !== 'undefined' && GEODATA.locations)
@@ -1895,6 +1973,28 @@ function renderMapTab() {
     statsEl.textContent = pinCount + ' locations plotted' +
       (unassignedCount ? ', ' + unassignedCount + ' unassigned' : '');
   }
+
+  // Pin style legend
+  const legendBox = document.createElement('div');
+  legendBox.style.cssText = 'margin-top:12px; padding:10px 16px; background:white; border:1px solid var(--border); border-radius:6px; display:inline-flex; gap:20px; align-items:center; font-size:12px; color:var(--text-muted);';
+
+  const solidItem = document.createElement('span');
+  solidItem.style.cssText = 'display:inline-flex; align-items:center; gap:6px;';
+  const solidDot = document.createElement('span');
+  solidDot.style.cssText = 'width:10px; height:10px; border-radius:50%; background:var(--brand); flex-shrink:0;';
+  solidItem.appendChild(solidDot);
+  solidItem.appendChild(txt('Location is inside a territory boundary'));
+  legendBox.appendChild(solidItem);
+
+  const openItem = document.createElement('span');
+  openItem.style.cssText = 'display:inline-flex; align-items:center; gap:6px;';
+  const openDot = document.createElement('span');
+  openDot.style.cssText = 'width:10px; height:10px; border-radius:50%; background:white; border:2.5px solid var(--brand); flex-shrink:0;';
+  openItem.appendChild(openDot);
+  openItem.appendChild(txt('Location is outside all boundaries \u2014 assigned to nearest territory'));
+  legendBox.appendChild(openItem);
+
+  wrap.appendChild(legendBox);
 
   setTimeout(() => _map.invalidateSize(), 100);
 }
@@ -2729,6 +2829,7 @@ function persistState() {
       vehicles: S.vehicles,
       territoryDrivers: S.territoryDrivers,
       customerTerritories: S.customerTerritories,
+      customerDecisions: S.customerDecisions,
       customerNames: S.customers.map(c => c.name),
       dkwNames,
       savedAt: Date.now()
@@ -2752,6 +2853,7 @@ function loadSession() {
       vehicles: data.vehicles || [],
       territoryDrivers: data.territoryDrivers || {},
       customerTerritories: data.customerTerritories || {},
+      customerDecisions: data.customerDecisions || {},
       customerNames: data.customerNames || [],
       dkwNames: data.dkwNames || [],
     };
@@ -3254,7 +3356,7 @@ function runVerification(wb) {
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '' });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '' });
   document.querySelectorAll('input[name="naming-std"]').forEach(r => { r.checked = r.value === 'dkw'; });
   show('phase-upload', true);
   show('phase-worklist', false);

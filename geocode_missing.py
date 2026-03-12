@@ -188,14 +188,18 @@ def get_missing_addresses(geodata):
     return missing
 
 
+CENSUS_URL = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress'
+
+
 def geocode_batch(addresses, api_key):
-    """Geocode addresses using Geocodio individual GET requests."""
+    """Geocode addresses using Geocodio, falling back to Census Bureau on quota limit."""
     results = {}
     failed = 0
+    quota_hit = False
 
     for i, item in enumerate(addresses):
         if (i + 1) % 50 == 0 or i == 0:
-            print(f'  Geocoding {i + 1}/{len(addresses)}...')
+            print(f'  [Geocodio] {i + 1}/{len(addresses)}...')
         try:
             resp = requests.get(
                 GEOCODIO_URL,
@@ -203,7 +207,8 @@ def geocode_batch(addresses, api_key):
                 timeout=15,
             )
             if resp.status_code == 403:
-                print(f'  403 at record {i + 1} — quota limit. Saving {len(results)} results.')
+                print(f'  Geocodio quota hit at record {i + 1}. Switching to Census Bureau...')
+                quota_hit = True
                 break
             if resp.status_code == 200:
                 data = resp.json()
@@ -220,11 +225,100 @@ def geocode_batch(addresses, api_key):
             failed += 1
             if failed <= 5:
                 print(f'  Failed: {item["display_name"]}: {e}')
-        # Rate limit: ~1000/min on free tier
         if (i + 1) % 100 == 0:
             time.sleep(1)
 
+    if quota_hit:
+        remaining = [a for a in addresses[i:] if a['norm'] not in results]
+        if remaining:
+            print(f'  Geocoding {len(remaining)} remaining via Census Bureau (no daily limit)...')
+            census_results = geocode_census_batch(remaining)
+            results.update(census_results)
+
     return results
+
+
+def geocode_census_batch(addresses):
+    """Geocode addresses using the US Census Bureau geocoder (free, unlimited)."""
+    results = {}
+    failed = 0
+
+    for i, item in enumerate(addresses):
+        if (i + 1) % 50 == 0 or i == 0:
+            print(f'  [Census] {i + 1}/{len(addresses)}...')
+        try:
+            resp = requests.get(
+                CENSUS_URL,
+                params={
+                    'address': item['address'],
+                    'benchmark': 'Public_AR_Current',
+                    'format': 'json',
+                },
+                timeout=20,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                matches = data.get('result', {}).get('addressMatches', [])
+                if matches:
+                    coords = matches[0]['coordinates']
+                    results[item['norm']] = {
+                        'lat': coords['y'],
+                        'lng': coords['x'],
+                        'accuracy': 0.8,
+                    }
+                else:
+                    failed += 1
+            else:
+                failed += 1
+        except Exception as e:
+            failed += 1
+            if failed <= 5:
+                print(f'  Census failed: {item["display_name"]}: {e}')
+        # Census rate limit is generous but add small delay to be respectful
+        if (i + 1) % 50 == 0:
+            time.sleep(0.5)
+
+    print(f'  Census results: {len(results)} geocoded, {failed} failed')
+    return results
+
+
+def load_geocode_cache():
+    """Load cached geocode results from previous runs."""
+    cache_path = os.path.join(SCRIPT_DIR, 'geocode_cache.json')
+    if os.path.exists(cache_path):
+        with open(cache_path) as f:
+            return json.load(f)
+    return {}
+
+
+def save_geocode_cache(cache):
+    """Save geocode cache to disk."""
+    cache_path = os.path.join(SCRIPT_DIR, 'geocode_cache.json')
+    with open(cache_path, 'w') as f:
+        json.dump(cache, f, separators=(',', ':'))
+    print(f'  Cache saved: {len(cache)} results → geocode_cache.json')
+
+
+def save_geodata(geodata):
+    """Write geodata.js to disk."""
+    output_path = os.path.join(SCRIPT_DIR, 'geodata.js')
+    with open(output_path, 'w') as f:
+        f.write('const GEODATA = ')
+        json.dump(geodata, f, separators=(',', ':'))
+        f.write(';\n')
+    size_kb = os.path.getsize(output_path) / 1024
+    print(f'  Wrote geodata.js ({size_kb:.1f} KB, {len(geodata["locations"])} locations)')
+
+
+def assign_territory(lat, lng, territories):
+    """Assign a territory via point-in-polygon, falling back to nearest."""
+    for t in territories:
+        if point_in_polygon(lat, lng, t['polygon']):
+            return t['name'], 'polygon'
+    if territories:
+        name, _ = nearest_territory(lat, lng, territories)
+        return name, 'nearest'
+    return None, None
 
 
 def main():
@@ -237,6 +331,32 @@ def main():
     # Load existing geodata
     geodata = load_geodata()
     print(f'Existing geodata: {len(geodata["locations"])} locations')
+
+    # Load geocode cache from previous runs
+    cache = load_geocode_cache()
+    if cache:
+        print(f'Geocode cache: {len(cache)} cached results from previous runs')
+
+    # Load KML territories for point-in-polygon
+    kml_path = os.path.join(SCRIPT_DIR, 'territories.kml')
+    territories = parse_kml(kml_path) if os.path.exists(kml_path) else []
+    print(f'Territory polygons: {len(territories)}')
+
+    # Apply any cached geocodes that aren't yet in geodata
+    cache_applied = 0
+    for norm_key, geo in cache.items():
+        if norm_key not in geodata['locations']:
+            entry = {'n': geo.get('display_name', ''), 'lat': geo['lat'], 'lng': geo['lng']}
+            terr, method = assign_territory(geo['lat'], geo['lng'], territories)
+            if terr:
+                entry['t'] = terr
+                if method == 'nearest':
+                    entry['a'] = 'nearest'
+            geodata['locations'][norm_key] = entry
+            cache_applied += 1
+    if cache_applied:
+        print(f'Applied {cache_applied} cached geocodes to geodata')
+        save_geodata(geodata)
 
     # Find missing addresses
     missing = get_missing_addresses(geodata)
@@ -253,63 +373,91 @@ def main():
         print(f'Skipping {skipped} records with insufficient address data')
     print(f'Geocoding {len(geocodable)} addresses via Geocodio...')
 
-    # Geocode
-    geocoded = geocode_batch(geocodable, api_key)
-    print(f'\nGeocoded: {len(geocoded)} of {len(geocodable)}')
-
-    # Load KML territories for point-in-polygon
-    kml_path = os.path.join(SCRIPT_DIR, 'territories.kml')
-    territories = parse_kml(kml_path) if os.path.exists(kml_path) else []
-    print(f'Territory polygons: {len(territories)}')
-
-    # Merge into geodata
+    # Geocode in chunks of 100, saving after each chunk
+    CHUNK = 100
+    total_geocoded = 0
     polygon_assigned = 0
     nearest_assigned = 0
-    for item in geocodable:
-        geo = geocoded.get(item['norm'])
-        if not geo:
-            continue
+    quota_hit = False
 
-        # Point-in-polygon territory assignment
-        territory = None
-        for t in territories:
-            if point_in_polygon(geo['lat'], geo['lng'], t['polygon']):
-                territory = t['name']
-                break
+    for start in range(0, len(geocodable), CHUNK):
+        chunk = geocodable[start:start + CHUNK]
+        geocoded = geocode_batch(chunk, api_key)
+        total_geocoded += len(geocoded)
 
-        entry = {
-            'n': item['display_name'],
-            'lat': geo['lat'],
-            'lng': geo['lng'],
-        }
-        if territory:
-            entry['t'] = territory
-            polygon_assigned += 1
-        elif territories:
-            # Nearest-territory fallback
-            territory, dist_km = nearest_territory(geo['lat'], geo['lng'], territories)
-            entry['t'] = territory
-            entry['a'] = 'nearest'
-            nearest_assigned += 1
+        # Update cache and geodata for this chunk
+        for item in chunk:
+            geo = geocoded.get(item['norm'])
+            if not geo:
+                continue
 
-        # Only add if not already in geodata
-        if item['norm'] not in geodata['locations']:
-            geodata['locations'][item['norm']] = entry
+            # Save to cache (raw lat/lng + display name)
+            cache[item['norm']] = {
+                'lat': geo['lat'],
+                'lng': geo['lng'],
+                'display_name': item['display_name'],
+            }
 
-    print(f'\nNew locations added: {len(geocoded)}')
+            # Build geodata entry with territory assignment
+            entry = {'n': item['display_name'], 'lat': geo['lat'], 'lng': geo['lng']}
+            terr, method = assign_territory(geo['lat'], geo['lng'], territories)
+            if terr:
+                entry['t'] = terr
+                if method == 'nearest':
+                    entry['a'] = 'nearest'
+                    nearest_assigned += 1
+                else:
+                    polygon_assigned += 1
+
+            if item['norm'] not in geodata['locations']:
+                geodata['locations'][item['norm']] = entry
+
+        # Save after every chunk
+        save_geocode_cache(cache)
+        save_geodata(geodata)
+
+        # If we got fewer results than the chunk size, we likely hit quota
+        if len(geocoded) < len(chunk):
+            quota_hit = True
+            break
+
+    # If Geocodio quota hit, fall back to Census for all remaining
+    if quota_hit:
+        remaining = [a for a in geocodable if a['norm'] not in cache]
+        if remaining:
+            print(f'\nGeocodio quota exhausted. Falling back to Census Bureau for {len(remaining)} remaining...')
+            census_results = geocode_census_batch(remaining)
+            total_geocoded += len(census_results)
+
+            for item in remaining:
+                geo = census_results.get(item['norm'])
+                if not geo:
+                    continue
+                cache[item['norm']] = {
+                    'lat': geo['lat'],
+                    'lng': geo['lng'],
+                    'display_name': item['display_name'],
+                }
+                entry = {'n': item['display_name'], 'lat': geo['lat'], 'lng': geo['lng']}
+                terr, method = assign_territory(geo['lat'], geo['lng'], territories)
+                if terr:
+                    entry['t'] = terr
+                    if method == 'nearest':
+                        entry['a'] = 'nearest'
+                        nearest_assigned += 1
+                    else:
+                        polygon_assigned += 1
+                if item['norm'] not in geodata['locations']:
+                    geodata['locations'][item['norm']] = entry
+
+            save_geocode_cache(cache)
+            save_geodata(geodata)
+
+    print(f'\nGeocoded this run: {total_geocoded}')
     print(f'  Polygon-assigned: {polygon_assigned}')
     print(f'  Nearest-assigned: {nearest_assigned}')
     print(f'Total locations now: {len(geodata["locations"])}')
-
-    # Write updated geodata.js
-    output_path = os.path.join(SCRIPT_DIR, 'geodata.js')
-    with open(output_path, 'w') as f:
-        f.write('const GEODATA = ')
-        json.dump(geodata, f, separators=(',', ':'))
-        f.write(';\n')
-
-    size_kb = os.path.getsize(output_path) / 1024
-    print(f'\nWrote {output_path} ({size_kb:.1f} KB)')
+    print(f'Total cached geocodes: {len(cache)}')
 
 
 if __name__ == '__main__':

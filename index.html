@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KW Environmental — Customer List Cleanup Tool</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="geodata.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -202,6 +203,12 @@
     .terr-check { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
     .terr-count { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 
+    /* Phase 1 Preview badge */
+    .phase-badge { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 6px; border-radius: 99px; background: #ede9fe; color: #6d28d9; vertical-align: middle; line-height: 1.6; }
+    .tab .phase-sub { display: block; font-size: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: #6d28d9; line-height: 1; margin-top: 1px; }
+    .phase-banner { padding: 10px 20px; border-bottom: 1px solid #ede9fe; background: #faf5ff; font-size: 12px; color: #6d28d9; display: flex; align-items: center; gap: 8px; }
+    .phase-banner .phase-icon { font-size: 14px; }
+
     /* Drivers & Vehicles tabs */
     .driver-card, .vehicle-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 8px 16px; transition: box-shadow .15s; }
     .driver-card:hover, .vehicle-card:hover { box-shadow: var(--shadow-md); }
@@ -256,6 +263,12 @@
     .leaflet-control-layers-overlays { padding:4px 0; }
     .legend-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap; }
     .legend-dot { width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex-shrink:0; }
+
+    /* Upload toast */
+    .upload-toast { position:fixed; bottom:24px; right:24px; padding:10px 18px; border-radius:8px; font-size:12px; font-weight:600; z-index:10000; animation:toast-in .3s ease; box-shadow:0 4px 12px rgba(0,0,0,.15); }
+    .upload-toast.success { background:#f0fdf4; color:#059669; border:1px solid #bbf7d0; }
+    .upload-toast.error { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+    @keyframes toast-in { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
   </style>
 </head>
 <body>
@@ -354,6 +367,44 @@
 <script>
 'use strict';
 
+// ── Supabase Export Backup ─────────────────────────────────────────────────
+const _sb = window.supabase.createClient(
+  'https://vtaufnxworztolfdwlll.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0YXVmbnh3b3J6dG9sZmR3bGxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA4ODIwMjUsImV4cCI6MjA1NjQ1ODAyNX0.O_Xg5cLp8x5FMQIYJKQKBCY8FC37AeJ5ffOhyEZ_yqg'
+);
+
+async function uploadExport(wb, filename, exportType) {
+  try {
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const now = new Date();
+    const ts = now.toISOString().slice(0, 16).replace('T', '_').replace(':', '');
+    const path = exportType + '/' + ts + '_' + filename;
+    const { error } = await _sb.storage.from('kw-exports').upload(path, blob, {
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      upsert: false,
+    });
+    if (error) throw error;
+    showUploadToast('success');
+  } catch (e) {
+    console.error('Export upload failed:', e);
+    showUploadToast('error');
+  }
+}
+
+function showUploadToast(status) {
+  const existing = document.getElementById('upload-toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'upload-toast';
+  toast.className = 'upload-toast ' + status;
+  toast.textContent = status === 'success'
+    ? '\u2601\ufe0f Backup saved'
+    : '\u26a0\ufe0f Backup failed \u2014 local file saved OK';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 4000);
+}
+
 // ── Sanitize: escapes text for safe DOM insertion ──────────────────────────
 function t(str) {
   const el = document.createElement('span');
@@ -379,6 +430,7 @@ const S = {
   searchQuery: '',
   _territorySelected: new Set(),
   _zipFilter: '',
+  _terrNameFilter: '',
   _territoryFilter: '',
   _samsaraImport: null,  // parsed Samsara export data: [{name, address, lat, lng, tags, type, ...}]
   _syncFilter: '',       // '', 'match', 'mismatch', 'missing', 'extra'
@@ -862,8 +914,8 @@ function renderTable() {
       '<li><strong>Decided</strong> \u2014 All records you\'ve made decisions on, including both DKW cleanup actions and customer actions (inactivate/keep). You can undo any decision from here.</li>',
       '<li><strong>Territories</strong> \u2014 Assign DKW customer locations to territories. Filter by territory or zip code, select rows, and bulk-assign. Territories are auto-populated from your KML boundaries.</li>',
       '<li><strong>All Customers</strong> \u2014 Every non-DKW customer from your Service Fusion export. These are your real customer records (the invoicing side). Each is flagged as <em>Paired</em> (has a DKW counterpart being cleaned up) or <em>Standalone</em> (no DKW version). Filter by territory, zip, or type. Assign territories the same way as the Territories tab.</li>',
-      '<li><strong>Drivers</strong> \u2014 Review and edit driver information. Update names, phone numbers, or status. Assign a primary and backup driver to each territory at the bottom.</li>',
-      '<li><strong>Vehicles</strong> \u2014 Review vehicle fleet information. Edit names, make/model/VIN, and assign a driver to each vehicle.</li>',
+      '<li><strong>Drivers</strong> <span class="phase-badge">Phase 1</span> \u2014 Preview of driver data from Samsara. Review names, phone numbers, and status. Territory\u2013driver assignments here carry forward into the Fleet Fusion rollout.</li>',
+      '<li><strong>Vehicles</strong> <span class="phase-badge">Phase 1</span> \u2014 Preview of vehicle fleet data from Samsara. Confirm make/model/VIN and driver assignments. Full fleet management activates with Fleet Fusion.</li>',
       '<li><strong>Map</strong> \u2014 Visual map of all customer locations color-coded by territory, with territory boundary polygons. Solid dots are locations inside a territory boundary. Open dots are locations outside all boundaries, assigned to the nearest territory. Use the layer control to toggle territories on/off. Download KML to share territory boundaries.</li>',
       '<li><strong>Samsara Sync</strong> \u2014 Compare your app data against a Samsara address export to find mismatches. This tab appears after you upload a Samsara export via the "Samsara Import" button.</li>',
       '</ul>',
@@ -1375,8 +1427,15 @@ function renderTerritoryTab() {
   if (S._zipFilter) {
     records = records.filter(r => r.zip && r.zip.startsWith(S._zipFilter));
   }
+  if (S._terrNameFilter) {
+    const q = S._terrNameFilter;
+    records = records.filter(r => {
+      const displayName = (S._namingStandard === 'dkw' ? r.suggestedName || r.dkwName : r.cleanName || r.dkwName) || '';
+      return displayName.toLowerCase().includes(q);
+    });
+  }
 
-  // Toolbar: zip filter + count + assign group
+  // Toolbar: zip filter + name search + count + assign group
   const toolbar = document.createElement('div');
   toolbar.className = 'terr-toolbar';
 
@@ -1417,6 +1476,19 @@ function renderTerritoryTab() {
     renderTerritoryTab();
   });
   toolbar.appendChild(zipInput);
+
+  const nameInput = document.createElement('input');
+  nameInput.className = 'zip-filter';
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Search by name\u2026';
+  nameInput.style.width = '180px';
+  nameInput.value = S._terrNameFilter || '';
+  nameInput.addEventListener('input', e => {
+    S._terrNameFilter = e.target.value.trim().toLowerCase();
+    S._territorySelected.clear();
+    renderTerritoryTab();
+  });
+  toolbar.appendChild(nameInput);
 
   const countSpan = document.createElement('span');
   countSpan.className = 'terr-count';
@@ -1762,7 +1834,7 @@ function renderCustomersTab() {
   thCheck.appendChild(selectAll);
   hRow.appendChild(thCheck);
 
-  ['Customer Name', 'Address', 'City', 'Zip', 'Agent', 'Type', 'Territory', 'Action'].forEach(col => {
+  ['Customer Name', 'Address', 'City', 'Zip', 'Type', 'Territory', 'Action'].forEach(col => {
     const th = document.createElement('th');
     th.textContent = col;
     hRow.appendChild(th);
@@ -1807,9 +1879,6 @@ function renderCustomersTab() {
 
     // Zip
     appendTd(tr, c.zip || '\u2014', 'font-size:12px;font-weight:600');
-
-    // Agent
-    appendTd(tr, c.agent || '\u2014', 'font-size:12px;color:var(--text-muted)');
 
     // Type (paired/standalone)
     const typeTd = document.createElement('td');
@@ -1989,6 +2058,18 @@ function renderMapTab() {
   header.appendChild(left);
   header.appendChild(btn);
   wrap.appendChild(header);
+
+  // Coverage note
+  const note = document.createElement('div');
+  note.style.cssText = 'padding:8px 12px; margin-bottom:12px; background:#f8fafc; border:1px solid var(--border); border-radius:6px; font-size:12px; color:#475569; line-height:1.5;';
+  const totalClean = S.customers.length;
+  const totalDKW = S.pairs.length + S.orphans.length;
+  const geoCount = Object.keys(GEODATA.locations || {}).length;
+  const ungeocodable = totalClean + S.orphans.length - geoCount;
+  note.textContent = geoCount.toLocaleString() + ' of ~' + (totalClean + S.orphans.length).toLocaleString()
+    + ' unique customer locations geocoded and auto-assigned to territories. '
+    + (ungeocodable > 0 ? ungeocodable + ' records could not be geocoded (missing or incomplete address in Service Fusion).' : '');
+  wrap.appendChild(note);
 
   // Map container
   const container = document.createElement('div');
@@ -2249,6 +2330,21 @@ function renderDriversTab() {
   const wrap = document.getElementById('table-wrap');
   wrap.replaceChildren();
 
+  // Phase 1 preview banner
+  const phaseBanner = document.createElement('div');
+  phaseBanner.className = 'phase-banner';
+  const phIcon = document.createElement('span');
+  phIcon.className = 'phase-icon';
+  phIcon.textContent = '\u{1F52E}';
+  const phText = document.createElement('span');
+  const phBold = document.createElement('strong');
+  phBold.textContent = 'Phase 1 Preview';
+  phText.appendChild(phBold);
+  phText.appendChild(txt(' \u2014 Driver data pulled from Samsara. Full driver\u2013territory management activates with Fleet Fusion rollout.'));
+  phaseBanner.appendChild(phIcon);
+  phaseBanner.appendChild(phText);
+  wrap.appendChild(phaseBanner);
+
   // Intro bar
   const intro = document.createElement('div');
   intro.className = 'tab-intro';
@@ -2496,6 +2592,21 @@ function renderDriversTab() {
 function renderVehiclesTab() {
   const wrap = document.getElementById('table-wrap');
   wrap.replaceChildren();
+
+  // Phase 1 preview banner
+  const vBanner = document.createElement('div');
+  vBanner.className = 'phase-banner';
+  const vIcon = document.createElement('span');
+  vIcon.className = 'phase-icon';
+  vIcon.textContent = '\u{1F52E}';
+  const vText = document.createElement('span');
+  const vBold = document.createElement('strong');
+  vBold.textContent = 'Phase 1 Preview';
+  vText.appendChild(vBold);
+  vText.appendChild(txt(' \u2014 Vehicle fleet data pulled from Samsara. Full vehicle\u2013driver assignment management activates with Fleet Fusion rollout.'));
+  vBanner.appendChild(vIcon);
+  vBanner.appendChild(vText);
+  wrap.appendChild(vBanner);
 
   // Intro bar
   const intro = document.createElement('div');
@@ -3257,8 +3368,9 @@ function exportXlsx(includeAll) {
     XLSX.utils.book_append_sheet(wb, ws2, 'Customer Actions');
   }
 
-  XLSX.writeFile(wb, 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx',
-    { cellStyles: true, bookSST: false, type: 'binary' });
+  const xlsxFilename = 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, xlsxFilename, { cellStyles: true, bookSST: false, type: 'binary' });
+  uploadExport(wb, xlsxFilename, includeAll ? 'all' : 'decided');
 }
 
 // ── Samsara CSV Export ─────────────────────────────────────────────────────
@@ -3413,6 +3525,7 @@ function exportSamsaraCsv() {
   // ── Write multi-sheet XLSX ───────────────────────────────────────────
   const filename = 'KW_Samsara_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx';
   XLSX.writeFile(wb, filename);
+  uploadExport(wb, filename, 'samsara');
 
   const parts = [records.length + ' addresses'];
   if (S.drivers.length) parts.push(S.drivers.length + ' drivers');
@@ -3609,6 +3722,7 @@ document.getElementById('export-issues-btn').addEventListener('click', () => {
   const wbNew  = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbNew, wsNew, 'Remaining Issues');
   XLSX.writeFile(wbNew, 'KW-Cleanup-Remaining-Issues.xlsx');
+  uploadExport(wbNew, 'KW-Cleanup-Remaining-Issues.xlsx', 'verify');
 });
 
 // Naming standard selector

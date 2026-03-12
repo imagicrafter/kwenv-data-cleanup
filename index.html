@@ -6,6 +6,8 @@
   <title>KW Environmental — Customer List Cleanup Tool</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="geodata.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -248,6 +250,9 @@
     .sync-legend .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
     .sync-filter-bar { padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
     .sync-filter-bar select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; }
+    #map-container { z-index: 1; }
+    .legend-item { display:flex; align-items:center; gap:6px; padding:2px 0; font-size:12px; }
+    .legend-dot { width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex-shrink:0; }
   </style>
 </head>
 <body>
@@ -308,6 +313,7 @@
       <button class="tab" data-tab="territories">📍 Territories <span class="count" id="tab-territories-count">0</span></button>
       <button class="tab" data-tab="drivers">👤 Drivers <span class="count" id="tab-drivers-count">0</span></button>
       <button class="tab" data-tab="vehicles">🚛 Vehicles <span class="count" id="tab-vehicles-count">0</span></button>
+      <button class="tab" data-tab="map">🗺️ Map</button>
       <button class="tab hidden" data-tab="samsara-sync" id="tab-samsara-sync">⚡ Samsara Sync <span class="count" id="tab-samsara-sync-count">0</span></button>
       <button class="tab" data-tab="help" style="margin-left:auto">? Help</button>
     </div>
@@ -743,6 +749,11 @@ function renderTable() {
 
   if (S.activeTab === 'vehicles') {
     renderVehiclesTab();
+    return;
+  }
+
+  if (S.activeTab === 'map') {
+    renderMapTab();
     return;
   }
 
@@ -1343,6 +1354,227 @@ function seedFleetData() {
       }
     });
   }
+}
+
+// ── Territory Colors ──────────────────────────────────────────────────────
+const TERRITORY_COLORS = [
+  '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
+  '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990', '#dcbeff',
+];
+
+function territoryColor(territory) {
+  const idx = (S.territories || []).indexOf(territory);
+  if (idx < 0) return '#94a3b8';
+  return TERRITORY_COLORS[idx % TERRITORY_COLORS.length];
+}
+
+// ── Map Tab ──────────────────────────────────────────────────────────────
+let _map = null;
+let _mapLayers = {};
+
+function renderMapTab() {
+  const wrap = document.getElementById('table-wrap');
+  wrap.replaceChildren();
+
+  // Build header bar with stats + KML download
+  const header = document.createElement('div');
+  header.style.cssText = 'display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;';
+  const left = document.createElement('div');
+  const title = document.createElement('strong');
+  title.textContent = 'Territory Map';
+  const stats = document.createElement('span');
+  stats.id = 'map-stats';
+  stats.style.cssText = 'color:#64748b; margin-left:12px; font-size:13px;';
+  left.appendChild(title);
+  left.appendChild(stats);
+  const btn = document.createElement('button');
+  btn.textContent = '\u2B07 Download KML';
+  btn.style.cssText = 'padding:6px 16px; border-radius:6px; border:1px solid var(--border); background:white; cursor:pointer; font-size:13px;';
+  btn.onclick = downloadKML;
+  header.appendChild(left);
+  header.appendChild(btn);
+  wrap.appendChild(header);
+
+  // Map container
+  const container = document.createElement('div');
+  container.id = 'map-container';
+  container.style.cssText = 'height:600px; border-radius:8px; border:1px solid var(--border);';
+  wrap.appendChild(container);
+
+  // Lazy init Leaflet — recreate each time since container is new
+  if (_map) { _map.remove(); _map = null; }
+  _map = L.map('map-container', { preferCanvas: true }).setView([34.5, -80.0], 7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 18,
+  }).addTo(_map);
+
+  _mapLayers = {};
+  const overlays = {};
+  const bounds = L.latLngBounds();
+  let pinCount = 0;
+  let unassignedCount = 0;
+
+  const recs = allRecords();
+
+  // Build per-territory layer groups
+  (S.territories || []).forEach(terr => {
+    _mapLayers[terr] = L.layerGroup();
+  });
+  _mapLayers['__unassigned__'] = L.layerGroup();
+
+  // Add customer pins
+  recs.forEach(r => {
+    if (S.decisions[r.dkwName] === 'inactivate') return;
+    const geo = (typeof GEODATA !== 'undefined' && GEODATA.locations)
+      ? GEODATA.locations[norm(r.dkwName)]
+      : null;
+    if (!geo || !geo.lat || !geo.lng) return;
+
+    const territory = S.territoryAssignments[r.dkwName] || geo.t || null;
+    const color = territory ? territoryColor(territory) : '#94a3b8';
+    const layerKey = territory || '__unassigned__';
+
+    if (!_mapLayers[layerKey]) {
+      _mapLayers[layerKey] = L.layerGroup();
+    }
+
+    const popupEl = document.createElement('div');
+    const nameEl = document.createElement('strong');
+    nameEl.textContent = r.cleanName || r.dkwName;
+    popupEl.appendChild(nameEl);
+    popupEl.appendChild(document.createElement('br'));
+    const addrText = document.createTextNode(r.address || '');
+    popupEl.appendChild(addrText);
+    popupEl.appendChild(document.createElement('br'));
+    const terrEl = document.createElement('em');
+    terrEl.textContent = territory || 'Unassigned';
+    popupEl.appendChild(terrEl);
+
+    const marker = L.circleMarker([geo.lat, geo.lng], {
+      radius: 5,
+      fillColor: color,
+      color: '#fff',
+      weight: 1,
+      fillOpacity: 0.8,
+    }).bindPopup(popupEl);
+
+    _mapLayers[layerKey].addLayer(marker);
+    bounds.extend([geo.lat, geo.lng]);
+    pinCount++;
+    if (!territory) unassignedCount++;
+  });
+
+  // Add territory polygons
+  if (typeof GEODATA !== 'undefined' && GEODATA.polygons) {
+    Object.entries(GEODATA.polygons).forEach(([terr, vertices]) => {
+      if (!_mapLayers[terr]) {
+        _mapLayers[terr] = L.layerGroup();
+      }
+      const color = territoryColor(terr);
+      const latlngs = vertices.map(v => [v.lat, v.lng]);
+      const popupEl = document.createElement('strong');
+      popupEl.textContent = terr;
+      const polygon = L.polygon(latlngs, {
+        color: color,
+        weight: 2,
+        fillColor: color,
+        fillOpacity: 0.1,
+        dashArray: '5,5',
+      }).bindPopup(popupEl);
+
+      _mapLayers[terr].addLayer(polygon);
+      latlngs.forEach(ll => bounds.extend(ll));
+    });
+  }
+
+  // Add all layers to map + build layer control overlays
+  Object.entries(_mapLayers).forEach(([key, group]) => {
+    group.addTo(_map);
+    const label = key === '__unassigned__' ? 'Unassigned' : key;
+    const color = key === '__unassigned__' ? '#94a3b8' : territoryColor(key);
+    const legendSpan = document.createElement('span');
+    legendSpan.className = 'legend-item';
+    const dot = document.createElement('span');
+    dot.className = 'legend-dot';
+    dot.style.background = color;
+    const text = document.createTextNode(label);
+    legendSpan.appendChild(dot);
+    legendSpan.appendChild(text);
+    overlays[legendSpan.outerHTML] = group;
+  });
+
+  // Layer control
+  L.control.layers(null, overlays, { collapsed: false }).addTo(_map);
+
+  // Fit bounds
+  if (bounds.isValid()) {
+    _map.fitBounds(bounds, { padding: [20, 20] });
+  }
+
+  // Update stats
+  const statsEl = document.getElementById('map-stats');
+  if (statsEl) {
+    statsEl.textContent = pinCount + ' locations plotted' +
+      (unassignedCount ? ', ' + unassignedCount + ' unassigned' : '');
+  }
+
+  setTimeout(() => _map.invalidateSize(), 100);
+}
+
+// ── KML Download ─────────────────────────────────────────────────────────
+function downloadKML() {
+  if (typeof GEODATA === 'undefined' || !GEODATA.polygons) {
+    showToast('No polygon data available for KML export.', 'warn');
+    return;
+  }
+
+  let kml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+  kml += '<kml xmlns="http://www.opengis.net/kml/2.2">\n';
+  kml += '<Document>\n';
+  kml += '  <name>KW Environmental Territories</name>\n';
+
+  (S.territories || []).forEach((terr, i) => {
+    const hex = TERRITORY_COLORS[i % TERRITORY_COLORS.length];
+    const r = hex.slice(1, 3), g = hex.slice(3, 5), b = hex.slice(5, 7);
+    const kmlColor = '80' + b + g + r;
+    const kmlLine = 'ff' + b + g + r;
+    kml += '  <Style id="style-' + i + '">\n';
+    kml += '    <PolyStyle><color>' + kmlColor + '</color></PolyStyle>\n';
+    kml += '    <LineStyle><color>' + kmlLine + '</color><width>2</width></LineStyle>\n';
+    kml += '  </Style>\n';
+  });
+
+  Object.entries(GEODATA.polygons).forEach(([terr, vertices]) => {
+    const idx = (S.territories || []).indexOf(terr);
+    const styleId = idx >= 0 ? 'style-' + idx : 'style-0';
+    const coords = vertices
+      .map(v => v.lng + ',' + v.lat + ',0')
+      .join('\n          ');
+
+    kml += '  <Placemark>\n';
+    kml += '    <name>' + terr + '</name>\n';
+    kml += '    <styleUrl>#' + styleId + '</styleUrl>\n';
+    kml += '    <Polygon>\n';
+    kml += '      <outerBoundaryIs>\n';
+    kml += '        <LinearRing>\n';
+    kml += '          <coordinates>\n          ' + coords + '\n          </coordinates>\n';
+    kml += '        </LinearRing>\n';
+    kml += '      </outerBoundaryIs>\n';
+    kml += '    </Polygon>\n';
+    kml += '  </Placemark>\n';
+  });
+
+  kml += '</Document>\n</kml>';
+
+  const blob = new Blob([kml], { type: 'application/vnd.google-earth.kml+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'KW_Territories_' + new Date().toISOString().slice(0, 10) + '.kml';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('KML exported with ' + Object.keys(GEODATA.polygons).length + ' territories.');
 }
 
 // ── Drivers Tab ───────────────────────────────────────────────────────────
@@ -2074,7 +2306,7 @@ document.getElementById('tabs').addEventListener('click', e => {
   S._zipFilter = '';
   S._territoryFilter = '';
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === S.activeTab));
-  const hideToolbar = S.activeTab === 'help' || S.activeTab === 'territories' || S.activeTab === 'drivers' || S.activeTab === 'vehicles' || S.activeTab === 'samsara-sync';
+  const hideToolbar = S.activeTab === 'help' || S.activeTab === 'territories' || S.activeTab === 'drivers' || S.activeTab === 'vehicles' || S.activeTab === 'map' || S.activeTab === 'samsara-sync';
   document.querySelector('.toolbar').classList.toggle('hidden', hideToolbar);
   show('bulk-inactivate-btn', S.activeTab === 'pairs');
   show('bulk-rename-btn',     S.activeTab === 'orphans');

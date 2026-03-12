@@ -6,9 +6,12 @@ PASSWORD="${KW_APP_PASSWORD:?Set KW_APP_PASSWORD env var}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# ── Step 0: Generate geodata from Supabase + KML ─────────────────────────
-echo "Generating geodata.js..."
-python3 generate_geodata.py
+# ── Step 0: Verify geodata.js exists (maintained by geocode_missing.py) ──
+if [ ! -f geodata.js ]; then
+  echo "ERROR: geodata.js not found. Run geocode_missing.py first." >&2
+  exit 1
+fi
+echo "Using existing geodata.js ($(wc -c < geodata.js | tr -d ' ') bytes)"
 
 # ── Step 1: Regenerate self-contained build ─────────────────────────────
 echo "Regenerating KW_DataCleanup.html..."
@@ -25,6 +28,8 @@ if cdn_tag not in new: print('ERROR: CDN tag not found in index.html', file=sys.
 with open('geodata.js','r') as f: geodata = f.read()
 geodata_tag = '<script src=\"geodata.js\"></script>'
 result = new.replace(cdn_tag, xlsx_block).replace(geodata_tag, '<script>' + geodata + '</script>')
+# Keep Supabase CDN as external (not inlined — it's 200KB+ and needs network anyway for uploads)
+# No change needed — the tag stays as-is in the HTML
 with open('KW_DataCleanup.html','w') as f: f.write(result)
 print('  Done.')
 "

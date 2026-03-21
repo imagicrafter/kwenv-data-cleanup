@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>KW Environmental — Customer List Cleanup Tool</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="geodata.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -59,6 +60,7 @@
     .stat-card.warn .value { color: var(--warn); }
     .stat-card.info .value { color: var(--info); }
     .stat-card.success .value { color: #059669; }
+    .stat-card.neutral .value { color: var(--neutral); }
 
     .progress-wrap { background: white; border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow); margin-bottom: 20px; }
     .progress-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
@@ -205,6 +207,12 @@
     .terr-check { width: 16px; height: 16px; accent-color: var(--brand); cursor: pointer; }
     .terr-count { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 
+    /* Phase 1 Preview badge */
+    .phase-badge { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; padding: 1px 6px; border-radius: 99px; background: #ede9fe; color: #6d28d9; vertical-align: middle; line-height: 1.6; }
+    .tab .phase-sub { display: block; font-size: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .4px; color: #6d28d9; line-height: 1; margin-top: 1px; }
+    .phase-banner { padding: 10px 20px; border-bottom: 1px solid #ede9fe; background: #faf5ff; font-size: 12px; color: #6d28d9; display: flex; align-items: center; gap: 8px; }
+    .phase-banner .phase-icon { font-size: 14px; }
+
     /* Drivers & Vehicles tabs */
     .driver-card, .vehicle-card { background: white; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; margin: 8px 16px; transition: box-shadow .15s; }
     .driver-card:hover, .vehicle-card:hover { box-shadow: var(--shadow-md); }
@@ -259,6 +267,12 @@
     .leaflet-control-layers-overlays { padding:4px 0; }
     .legend-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; white-space:nowrap; }
     .legend-dot { width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.2); flex-shrink:0; }
+
+    /* Upload toast */
+    .upload-toast { position:fixed; bottom:24px; right:24px; padding:10px 18px; border-radius:8px; font-size:12px; font-weight:600; z-index:10000; animation:toast-in .3s ease; box-shadow:0 4px 12px rgba(0,0,0,.15); }
+    .upload-toast.success { background:#f0fdf4; color:#059669; border:1px solid #bbf7d0; }
+    .upload-toast.error { background:#fef2f2; color:#dc2626; border:1px solid #fecaca; }
+    @keyframes toast-in { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
   </style>
 </head>
 <body>
@@ -308,6 +322,7 @@
       </div>
       <button class="export-btn secondary" id="export-decided-btn">⬇ Export Decided</button>
       <button class="export-btn primary" id="export-all-btn">⬇ Export All</button>
+      <button class="export-btn primary" id="export-inactivate-btn">⬇ Inactivate Checklist</button>
       <button class="export-btn secondary" id="export-samsara-btn">⬇ Samsara Export</button>
       <button class="export-btn secondary" id="import-samsara-btn">⬆ Samsara Import</button>
       <input type="file" id="samsara-import-input" accept=".xlsx,.csv" style="display:none" />
@@ -357,6 +372,44 @@
 <script>
 'use strict';
 
+// ── Supabase Export Backup ─────────────────────────────────────────────────
+const _sb = window.supabase.createClient(
+  'https://vtaufnxworztolfdwlll.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0YXVmbnh3b3J6dG9sZmR3bGxsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDA4ODIwMjUsImV4cCI6MjA1NjQ1ODAyNX0.O_Xg5cLp8x5FMQIYJKQKBCY8FC37AeJ5ffOhyEZ_yqg'
+);
+
+async function uploadExport(wb, filename, exportType) {
+  try {
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const now = new Date();
+    const ts = now.toISOString().slice(0, 16).replace('T', '_').replace(':', '');
+    const path = exportType + '/' + ts + '_' + filename;
+    const { error } = await _sb.storage.from('kw-exports').upload(path, blob, {
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      upsert: false,
+    });
+    if (error) throw error;
+    showUploadToast('success');
+  } catch (e) {
+    console.error('Export upload failed:', e);
+    showUploadToast('error');
+  }
+}
+
+function showUploadToast(status) {
+  const existing = document.getElementById('upload-toast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'upload-toast';
+  toast.className = 'upload-toast ' + status;
+  toast.textContent = status === 'success'
+    ? '\u2601\ufe0f Backup saved'
+    : '\u26a0\ufe0f Backup failed \u2014 local file saved OK';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 4000);
+}
+
 // ── Sanitize: escapes text for safe DOM insertion ──────────────────────────
 function t(str) {
   const el = document.createElement('span');
@@ -382,6 +435,7 @@ const S = {
   searchQuery: '',
   _territorySelected: new Set(),
   _zipFilter: '',
+  _terrNameFilter: '',
   _territoryFilter: '',
   _samsaraImport: null,  // parsed Samsara export data: [{name, address, lat, lng, tags, type, ...}]
   _syncFilter: '',       // '', 'match', 'mismatch', 'missing', 'extra'
@@ -390,14 +444,27 @@ const S = {
   customerDecisions:    {},   // clean customer name -> 'inactivate'|'keep'|'skip'
   _customerSelected: new Set(),
   _customerZipFilter: '',
+  _customerNameFilter: '',
   _customerTerritoryFilter: '',
   _customerTypeFilter: '',   // '' | 'standalone' | 'paired'
   _customerStatusFilter: '', // '' | 'undecided' | 'inactivate' | 'keep'
+  _excludedInactive: 0,
+  _excludedParent: 0,
 };
 
 // ── Normalize name — strips DKW prefix, removes non-alphanumeric, uppercases
 const norm = name =>
   name.replace(/^DKW[\s\-\u2013]*/i, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+
+// Normalize address for matching — strips suffixes, punctuation, whitespace
+function normAddr(addr1, city, state, zip) {
+  if (!addr1) return '';
+  let s = [addr1, city, state, zip].filter(Boolean).map(v => String(v).trim()).join(' ').toUpperCase();
+  // Remove common street suffixes so "123 Main St" matches "123 Main Street"
+  s = s.replace(/\b(STREET|AVENUE|DRIVE|BOULEVARD|LANE|COURT|CIRCLE|PLACE|TRAIL|PARKWAY|PKWY)\b/g, '')
+       .replace(/\b(ST|AVE|DR|BLVD|LN|CT|CIR|PL|TRL|PKY|RD|ROAD|WAY)\b/g, '');
+  return s.replace(/[^A-Z0-9]/g, '');
+}
 
 // ── Accessors ──────────────────────────────────────────────────────────────
 function allRecords() { return [...S.pairs, ...S.orphans]; }
@@ -492,13 +559,54 @@ function processWorkbook(wb) {
       .filter(Boolean).map(v => String(v).trim()).join(', ');
   }
 
-  const dkwRows   = data.filter(r => /^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
-  const cleanRows = data.filter(r => !/^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+  // Pre-filter: exclude inactive records and parent account rows
+  let inactiveCount = 0;
+  let parentCount = 0;
 
-  const cleanMap = {};
+  // Build set of parent account names — rows whose name is used as another row's
+  // Parent Account Name value. These are billing entities (e.g., "Dispatch",
+  // "Mahoney Environmental") with no real service location.
+  const parentNames = new Set();
+  if (iParent >= 0) {
+    data.forEach(r => {
+      const pv = String(r[iParent] || '').trim();
+      if (pv) parentNames.add(pv);
+    });
+  }
+
+  const filtered = data.filter(r => {
+    const name = String(r[iName] || '').trim();
+    // Exclude inactive records
+    if (iActive >= 0) {
+      const v = String(r[iActive] || '').trim().toLowerCase();
+      if (v === 'false' || v === 'no' || v === '0') {
+        inactiveCount++;
+        return false;
+      }
+    }
+    // Exclude parent account rows (their name appears as another row's Parent Account Name)
+    if (parentNames.has(name)) {
+      parentCount++;
+      return false;
+    }
+    return true;
+  });
+
+  S._excludedInactive = inactiveCount;
+  S._excludedParent = parentCount;
+
+  const dkwRows   = filtered.filter(r => /^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+  const cleanRows = filtered.filter(r => !/^DKW[\s\-\u2013]/i.test(String(r[iName] || '')));
+
+  // Build dual indexes for matching: address-primary, name-fallback
+  const cleanByAddr = {};
+  const cleanByName = {};
   cleanRows.forEach(r => {
-    const n = norm(String(r[iName]));
-    if (n) cleanMap[n] = r;
+    const name = String(r[iName]).trim();
+    const n = norm(name);
+    const a = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
+    if (a) cleanByAddr[a] = r;
+    if (n) cleanByName[n] = r;
   });
 
   S.pairs     = [];
@@ -519,18 +627,23 @@ function processWorkbook(wb) {
     const acctNum   = r[iAcctNum] ? String(r[iAcctNum]).trim()  : '';
     const suggested = dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
 
-    if (cleanMap[n]) {
-      const cr = cleanMap[n];
+    // Match by address first, then by name
+    const dkwAddr = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
+    const addrMatch = dkwAddr ? cleanByAddr[dkwAddr] : null;
+    const nameMatch = cleanByName[n];
+    const match = addrMatch || nameMatch;
+    const matchedBy = addrMatch ? 'address' : (nameMatch ? 'name' : null);
+
+    if (match) {
       S.pairs.push({
         dkwName,
-        cleanName:  String(cr[iName]).trim(),
-        cleanAgent: cr[iAgent]   ? String(cr[iAgent]).trim()   : '',
-        cleanAcct:  cr[iAcctNum] ? String(cr[iAcctNum]).trim() : '',
+        cleanName:  String(match[iName]).trim(),
+        cleanAgent: match[iAgent]   ? String(match[iAgent]).trim()   : '',
+        cleanAcct:  match[iAcctNum] ? String(match[iAcctNum]).trim() : '',
         address, city, state, zip,
-        agent,
-        created,
-        acctNum,
+        agent, created, acctNum,
         rec: 'inactivate',
+        matchedBy,
       });
     } else {
       S.orphans.push({
@@ -538,17 +651,20 @@ function processWorkbook(wb) {
         suggestedName: suggested,
         cleanName: null,
         address, city, state, zip,
-        agent,
-        created,
-        acctNum,
+        agent, created, acctNum,
         rec: 'rename',
       });
     }
   });
 
-  // Capture all clean (non-DKW) customer records
+  // Build sets for marking clean customers as paired
   const dkwNorms = new Set(S.pairs.map(r => norm(r.dkwName))
     .concat(S.orphans.map(r => norm(r.dkwName))));
+  const dkwAddrSet = new Set();
+  dkwRows.forEach(r => {
+    const a = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
+    if (a) dkwAddrSet.add(a);
+  });
 
   S.customers = [];
   S.customerTerritories = {};
@@ -556,6 +672,7 @@ function processWorkbook(wb) {
     const name = String(r[iName]).trim();
     if (!name) return;
     const n = norm(name);
+    const a = normAddr(r[iAddr1], r[iCity], r[iState], r[iZip]);
     S.customers.push({
       name,
       address: buildAddress(r),
@@ -564,7 +681,7 @@ function processWorkbook(wb) {
       zip:     r[iZip]     ? String(r[iZip]).trim()      : '',
       agent:   r[iAgent]   ? String(r[iAgent]).trim()    : '',
       acctNum: r[iAcctNum] ? String(r[iAcctNum]).trim()  : '',
-      paired:  dkwNorms.has(n),
+      paired:  dkwNorms.has(n) || (a && dkwAddrSet.has(a)),
     });
   });
 
@@ -732,7 +849,8 @@ function renderStats() {
     .map(([name, count]) => name + ': ' + count)
     .join(', ') || 'No territories assigned yet';
 
-  setStatsBar('stats-bar', [
+  const excluded = (S._excludedInactive || 0) + (S._excludedParent || 0);
+  const statsCards = [
     { cls: 'brand',   label: 'Total DKW Records',  value: total },
     { cls: 'danger',  label: 'Confirmed Pairs',     value: S.pairs.length },
     { cls: 'warn',    label: 'Unmatched DKW',       value: S.orphans.length },
@@ -741,14 +859,53 @@ function renderStats() {
     { cls: 'success', label: 'Decided',             value: decided },
     { cls: 'brand',   label: 'Territories Assigned', value: terrAssigned, tip: terrTip },
     { cls: 'info',    label: 'SF Customers',          value: S.customers.length },
-  ]);
+  ];
+  if (excluded > 0) {
+    const exParts = [];
+    if (S._excludedInactive > 0) exParts.push(S._excludedInactive + ' inactive');
+    if (S._excludedParent > 0) exParts.push(S._excludedParent + ' parent accounts');
+    statsCards.push({ cls: 'neutral', label: 'Excluded', value: excluded, tip: 'Filtered out: ' + exParts.join(', ') });
+  }
+  setStatsBar('stats-bar', statsCards);
+
+  // Filter exclusion banner
+  const oldBanner = document.getElementById('filter-banner');
+  if (oldBanner) oldBanner.remove();
+
+  if (excluded > 0) {
+    const statsBar = document.getElementById('stats-bar');
+    const banner = document.createElement('div');
+    banner.id = 'filter-banner';
+    banner.style.cssText = 'background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;font-size:13px;color:#1e40af;';
+
+    const bParts = [];
+    if (S._excludedInactive > 0) bParts.push(S._excludedInactive + ' inactive');
+    if (S._excludedParent > 0) bParts.push(S._excludedParent + ' parent accounts');
+
+    const bText = document.createElement('span');
+    bText.style.flex = '1';
+    bText.textContent = 'Excluded from audit: ' + bParts.join(', ') + ' (' + excluded + ' total filtered)';
+    banner.appendChild(bText);
+
+    const dismiss = document.createElement('button');
+    dismiss.textContent = '\u2715';
+    dismiss.style.cssText = 'background:none;border:none;color:#1e40af;cursor:pointer;font-size:16px;padding:0 4px;';
+    dismiss.onclick = () => banner.remove();
+    banner.appendChild(dismiss);
+
+    statsBar.parentNode.insertBefore(banner, statsBar.nextSibling);
+  }
 
   const pairsRemaining   = S.pairs.filter(r => !S.decisions[r.dkwName]).length;
   const orphansRemaining = S.orphans.filter(r => !S.decisions[r.dkwName]).length;
 
-  const unassigned = allRecords().filter(r =>
+  const dkwUnassigned = allRecords().filter(r =>
     S.decisions[r.dkwName] !== 'inactivate' && !S.territoryAssignments[r.dkwName]
   ).length;
+  const custUnassigned = S.customers.filter(c =>
+    S.customerDecisions[c.name] !== 'inactivate' && !S.customerTerritories[c.name]
+  ).length;
+  const unassigned = dkwUnassigned + custUnassigned;
 
   setText('tab-pairs-count',       pairsRemaining);
   setText('tab-orphans-count',     orphansRemaining);
@@ -865,8 +1022,8 @@ function renderTable() {
       '<li><strong>Decided</strong> \u2014 All records you\'ve made decisions on, including both DKW cleanup actions and customer actions (inactivate/keep). You can undo any decision from here.</li>',
       '<li><strong>Territories</strong> \u2014 Assign DKW customer locations to territories. Filter by territory or zip code, select rows, and bulk-assign. Territories are auto-populated from your KML boundaries.</li>',
       '<li><strong>All Customers</strong> \u2014 Every non-DKW customer from your Service Fusion export. These are your real customer records (the invoicing side). Each is flagged as <em>Paired</em> (has a DKW counterpart being cleaned up) or <em>Standalone</em> (no DKW version). Filter by territory, zip, or type. Assign territories the same way as the Territories tab.</li>',
-      '<li><strong>Drivers</strong> \u2014 Review and edit driver information. Update names, phone numbers, or status. Assign a primary and backup driver to each territory at the bottom.</li>',
-      '<li><strong>Vehicles</strong> \u2014 Review vehicle fleet information. Edit names, make/model/VIN, and assign a driver to each vehicle.</li>',
+      '<li><strong>Drivers</strong> <span class="phase-badge">Phase 1</span> \u2014 Preview of driver data from Samsara. Review names, phone numbers, and status. Territory\u2013driver assignments here carry forward into the Fleet Fusion rollout.</li>',
+      '<li><strong>Vehicles</strong> <span class="phase-badge">Phase 1</span> \u2014 Preview of vehicle fleet data from Samsara. Confirm make/model/VIN and driver assignments. Full fleet management activates with Fleet Fusion.</li>',
       '<li><strong>Map</strong> \u2014 Visual map of all customer locations color-coded by territory, with territory boundary polygons. Solid dots are locations inside a territory boundary. Open dots are locations outside all boundaries, assigned to the nearest territory. Use the layer control to toggle territories on/off. Download KML to share territory boundaries.</li>',
       '<li><strong>Samsara Sync</strong> \u2014 Compare your app data against a Samsara address export to find mismatches. This tab appears after you upload a Samsara export via the "Samsara Import" button.</li>',
       '</ul>',
@@ -967,6 +1124,13 @@ function renderTable() {
       const sp = document.createElement('span');
       sp.className   = 'clean-match';
       sp.textContent = '✓ ' + r.cleanName;
+      if (r.matchedBy) {
+        const mbBadge = document.createElement('span');
+        mbBadge.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:1px 5px;border-radius:3px;margin-left:6px;' +
+          (r.matchedBy === 'address' ? 'background:#dbeafe;color:#1d4ed8;' : 'background:#e0e7ff;color:#4338ca;');
+        mbBadge.textContent = r.matchedBy === 'address' ? 'addr match' : 'name match';
+        sp.appendChild(mbBadge);
+      }
       const sub = document.createElement('span');
       sub.className   = 'sub-note';
       sub.textContent = (r.cleanJobs || 0) + ' jobs on clean record';
@@ -1364,22 +1528,62 @@ function renderTerritoryTab() {
   manager.appendChild(addBtn);
   wrap.appendChild(manager);
 
-  // Get records: all NOT inactivated
-  let records = allRecords().filter(r => S.decisions[r.dkwName] !== 'inactivate');
+  // Get records: DKW (not inactivated) + clean customers (not inactivated)
+  // Unified record format: { _key, _name, address, city, zip, _source }
+  const dkwRecs = allRecords()
+    .filter(r => S.decisions[r.dkwName] !== 'inactivate')
+    .map(r => ({
+      _key: r.dkwName,
+      _name: getDisplayName(r),
+      address: r.address,
+      city: r.city,
+      zip: r.zip,
+      _source: 'dkw',
+    }));
+  const custRecs = S.customers
+    .filter(c => S.customerDecisions[c.name] !== 'inactivate')
+    .map(c => ({
+      _key: 'cust:' + c.name,
+      _name: c.name,
+      address: c.address,
+      city: c.city,
+      zip: c.zip,
+      _source: 'customer',
+    }));
+
+  // Helper: get/set territory for a unified record
+  function getTerritory(rec) {
+    if (rec._source === 'dkw') return S.territoryAssignments[rec._key] || '';
+    return S.customerTerritories[rec._key.slice(5)] || '';
+  }
+  function setTerritory(rec, territory) {
+    if (rec._source === 'dkw') S.territoryAssignments[rec._key] = territory;
+    else S.customerTerritories[rec._key.slice(5)] = territory;
+  }
+  function clearTerritory(rec) {
+    if (rec._source === 'dkw') delete S.territoryAssignments[rec._key];
+    else delete S.customerTerritories[rec._key.slice(5)];
+  }
+
+  let records = [...dkwRecs, ...custRecs];
 
   // Apply filters
   if (S._territoryFilter) {
     if (S._territoryFilter === '__unassigned__') {
-      records = records.filter(r => !S.territoryAssignments[r.dkwName]);
+      records = records.filter(r => !getTerritory(r));
     } else {
-      records = records.filter(r => S.territoryAssignments[r.dkwName] === S._territoryFilter);
+      records = records.filter(r => getTerritory(r) === S._territoryFilter);
     }
   }
   if (S._zipFilter) {
     records = records.filter(r => r.zip && r.zip.startsWith(S._zipFilter));
   }
+  if (S._terrNameFilter) {
+    const q = S._terrNameFilter;
+    records = records.filter(r => r._name.toLowerCase().includes(q));
+  }
 
-  // Toolbar: zip filter + count + assign group
+  // Toolbar: zip filter + name search + count + assign group
   const toolbar = document.createElement('div');
   toolbar.className = 'terr-toolbar';
 
@@ -1421,9 +1625,26 @@ function renderTerritoryTab() {
   });
   toolbar.appendChild(zipInput);
 
+  const nameInput = document.createElement('input');
+  nameInput.className = 'zip-filter';
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Search by name\u2026';
+  nameInput.style.width = '180px';
+  nameInput.value = S._terrNameFilter || '';
+  nameInput.addEventListener('input', e => {
+    const pos = e.target.selectionStart;
+    S._terrNameFilter = e.target.value.toLowerCase();
+    S._territorySelected.clear();
+    renderTerritoryTab();
+    // Restore focus and cursor position after re-render
+    const restored = wrap.querySelector('input[placeholder="Search by name\u2026"]');
+    if (restored) { restored.focus(); restored.setSelectionRange(pos, pos); }
+  });
+  toolbar.appendChild(nameInput);
+
   const countSpan = document.createElement('span');
   countSpan.className = 'terr-count';
-  const assigned = records.filter(r => S.territoryAssignments[r.dkwName]).length;
+  const assigned = records.filter(r => getTerritory(r)).length;
   countSpan.textContent = records.length + ' customers shown \u00b7 ' + assigned + ' assigned';
   toolbar.appendChild(countSpan);
 
@@ -1448,8 +1669,10 @@ function renderTerritoryTab() {
       }
     }
     const count = S._territorySelected.size;
-    S._territorySelected.forEach(name => {
-      S.territoryAssignments[name] = territory;
+    const allMerged = [...dkwRecs, ...custRecs];
+    S._territorySelected.forEach(key => {
+      const rec = allMerged.find(r => r._key === key);
+      if (rec) setTerritory(rec, territory);
     });
     S._territorySelected.clear();
     persistState();
@@ -1485,12 +1708,12 @@ function renderTerritoryTab() {
   const selectAll = document.createElement('input');
   selectAll.type = 'checkbox';
   selectAll.className = 'terr-check';
-  selectAll.checked = records.length > 0 && records.every(r => S._territorySelected.has(r.dkwName));
+  selectAll.checked = records.length > 0 && records.every(r => S._territorySelected.has(r._key));
   selectAll.addEventListener('change', () => {
     if (selectAll.checked) {
-      records.forEach(r => S._territorySelected.add(r.dkwName));
+      records.forEach(r => S._territorySelected.add(r._key));
     } else {
-      records.forEach(r => S._territorySelected.delete(r.dkwName));
+      records.forEach(r => S._territorySelected.delete(r._key));
     }
     renderTerritoryTab();
   });
@@ -1514,20 +1737,20 @@ function renderTerritoryTab() {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.className = 'terr-check';
-    cb.checked = S._territorySelected.has(r.dkwName);
+    cb.checked = S._territorySelected.has(r._key);
     cb.addEventListener('change', () => {
-      if (cb.checked) S._territorySelected.add(r.dkwName);
-      else S._territorySelected.delete(r.dkwName);
+      if (cb.checked) S._territorySelected.add(r._key);
+      else S._territorySelected.delete(r._key);
       // Update assign button state and select-all
       const assignBtnEl = wrap.querySelector('.terr-assign-btn');
       if (assignBtnEl) assignBtnEl.disabled = S._territorySelected.size === 0;
-      selectAll.checked = records.every(r2 => S._territorySelected.has(r2.dkwName));
+      selectAll.checked = records.every(r2 => S._territorySelected.has(r2._key));
     });
     tdCheck.appendChild(cb);
     tr.appendChild(tdCheck);
 
-    // Customer name (use display name based on naming standard)
-    appendTd(tr, getDisplayName(r), 'font-weight:600;font-size:13px');
+    // Customer name
+    appendTd(tr, r._name, 'font-weight:600;font-size:13px');
 
     // Address
     const addrTd = document.createElement('td');
@@ -1547,7 +1770,7 @@ function renderTerritoryTab() {
     // Territory assignment
     const terrTd = document.createElement('td');
     terrTd.className = 'territory-cell';
-    const currentTerr = S.territoryAssignments[r.dkwName];
+    const currentTerr = getTerritory(r);
     if (currentTerr) {
       const terrLabel = document.createElement('span');
       terrLabel.className = 'terr-pill';
@@ -1557,7 +1780,7 @@ function renderTerritoryTab() {
       clearBtn.className = 'terr-x';
       clearBtn.textContent = '\u00d7';
       clearBtn.addEventListener('click', () => {
-        delete S.territoryAssignments[r.dkwName];
+        clearTerritory(r);
         persistState();
         renderAll();
       });
@@ -1605,6 +1828,12 @@ function renderCustomersTab() {
     records = records.filter(c => !c.paired);
   } else if (S._customerTypeFilter === 'paired') {
     records = records.filter(c => c.paired);
+  }
+
+  // Name filter
+  if (S._customerNameFilter) {
+    const q = S._customerNameFilter;
+    records = records.filter(c => c.name.toLowerCase().includes(q));
   }
 
   // Status filter
@@ -1655,6 +1884,22 @@ function renderCustomersTab() {
     renderCustomersTab();
   });
   toolbar.appendChild(zipInput);
+
+  const custNameInput = document.createElement('input');
+  custNameInput.className = 'zip-filter';
+  custNameInput.type = 'text';
+  custNameInput.placeholder = 'Search by name\u2026';
+  custNameInput.style.width = '180px';
+  custNameInput.value = S._customerNameFilter || '';
+  custNameInput.addEventListener('input', e => {
+    const pos = e.target.selectionStart;
+    S._customerNameFilter = e.target.value.toLowerCase();
+    S._customerSelected.clear();
+    renderCustomersTab();
+    const restored = wrap.querySelector('input[placeholder="Search by name\u2026"]');
+    if (restored) { restored.focus(); restored.setSelectionRange(pos, pos); }
+  });
+  toolbar.appendChild(custNameInput);
 
   const typeFilter = document.createElement('select');
   typeFilter.className = 'territory-select';
@@ -1765,7 +2010,7 @@ function renderCustomersTab() {
   thCheck.appendChild(selectAll);
   hRow.appendChild(thCheck);
 
-  ['Customer Name', 'Address', 'City', 'Zip', 'Agent', 'Type', 'Territory', 'Action'].forEach(col => {
+  ['Customer Name', 'Address', 'City', 'Zip', 'Type', 'Territory', 'Action'].forEach(col => {
     const th = document.createElement('th');
     th.textContent = col;
     hRow.appendChild(th);
@@ -1810,9 +2055,6 @@ function renderCustomersTab() {
 
     // Zip
     appendTd(tr, c.zip || '\u2014', 'font-size:12px;font-weight:600');
-
-    // Agent
-    appendTd(tr, c.agent || '\u2014', 'font-size:12px;color:var(--text-muted)');
 
     // Type (paired/standalone)
     const typeTd = document.createElement('td');
@@ -1992,6 +2234,18 @@ function renderMapTab() {
   header.appendChild(left);
   header.appendChild(btn);
   wrap.appendChild(header);
+
+  // Coverage note
+  const note = document.createElement('div');
+  note.style.cssText = 'padding:8px 12px; margin-bottom:12px; background:#f8fafc; border:1px solid var(--border); border-radius:6px; font-size:12px; color:#475569; line-height:1.5;';
+  const totalClean = S.customers.length;
+  const totalDKW = S.pairs.length + S.orphans.length;
+  const geoCount = Object.keys(GEODATA.locations || {}).length;
+  const ungeocodable = totalClean + S.orphans.length - geoCount;
+  note.textContent = geoCount.toLocaleString() + ' of ~' + (totalClean + S.orphans.length).toLocaleString()
+    + ' unique customer locations geocoded and auto-assigned to territories. '
+    + (ungeocodable > 0 ? ungeocodable + ' records could not be geocoded (missing or incomplete address in Service Fusion).' : '');
+  wrap.appendChild(note);
 
   // Map container
   const container = document.createElement('div');
@@ -2252,6 +2506,21 @@ function renderDriversTab() {
   const wrap = document.getElementById('table-wrap');
   wrap.replaceChildren();
 
+  // Phase 1 preview banner
+  const phaseBanner = document.createElement('div');
+  phaseBanner.className = 'phase-banner';
+  const phIcon = document.createElement('span');
+  phIcon.className = 'phase-icon';
+  phIcon.textContent = '\u{1F52E}';
+  const phText = document.createElement('span');
+  const phBold = document.createElement('strong');
+  phBold.textContent = 'Phase 1 Preview';
+  phText.appendChild(phBold);
+  phText.appendChild(txt(' \u2014 Driver data pulled from Samsara. Full driver\u2013territory management activates with Fleet Fusion rollout.'));
+  phaseBanner.appendChild(phIcon);
+  phaseBanner.appendChild(phText);
+  wrap.appendChild(phaseBanner);
+
   // Intro bar
   const intro = document.createElement('div');
   intro.className = 'tab-intro';
@@ -2499,6 +2768,21 @@ function renderDriversTab() {
 function renderVehiclesTab() {
   const wrap = document.getElementById('table-wrap');
   wrap.replaceChildren();
+
+  // Phase 1 preview banner
+  const vBanner = document.createElement('div');
+  vBanner.className = 'phase-banner';
+  const vIcon = document.createElement('span');
+  vIcon.className = 'phase-icon';
+  vIcon.textContent = '\u{1F52E}';
+  const vText = document.createElement('span');
+  const vBold = document.createElement('strong');
+  vBold.textContent = 'Phase 1 Preview';
+  vText.appendChild(vBold);
+  vText.appendChild(txt(' \u2014 Vehicle fleet data pulled from Samsara. Full vehicle\u2013driver assignment management activates with Fleet Fusion rollout.'));
+  vBanner.appendChild(vIcon);
+  vBanner.appendChild(vText);
+  wrap.appendChild(vBanner);
 
   // Intro bar
   const intro = document.createElement('div');
@@ -3139,6 +3423,7 @@ function showRestoreBanner(summary) {
 // Export
 document.getElementById('export-decided-btn').addEventListener('click', () => exportXlsx(false));
 document.getElementById('export-all-btn').addEventListener('click',     () => exportXlsx(true));
+document.getElementById('export-inactivate-btn').addEventListener('click', exportBulkInactivate);
 
 function exportXlsx(includeAll) {
   const records = includeAll
@@ -3260,8 +3545,145 @@ function exportXlsx(includeAll) {
     XLSX.utils.book_append_sheet(wb, ws2, 'Customer Actions');
   }
 
-  XLSX.writeFile(wb, 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx',
-    { cellStyles: true, bookSST: false, type: 'binary' });
+  const xlsxFilename = 'KW_Cleanup_Actions_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, xlsxFilename, { cellStyles: true, bookSST: false, type: 'binary' });
+  uploadExport(wb, xlsxFilename, includeAll ? 'all' : 'decided');
+}
+
+// ── Bulk Inactivate Checklist Export ───────────────────────────────────────
+function exportBulkInactivate() {
+  const safe = [...S.pairs].sort((a, b) => {
+    const ta = S.territoryAssignments[a.dkwName] || 'ZZZ';
+    const tb = S.territoryAssignments[b.dkwName] || 'ZZZ';
+    return ta.localeCompare(tb) || a.dkwName.localeCompare(b.dkwName);
+  });
+  const review = [...S.orphans].sort((a, b) => {
+    const ta = S.territoryAssignments[a.dkwName] || 'ZZZ';
+    const tb = S.territoryAssignments[b.dkwName] || 'ZZZ';
+    return ta.localeCompare(tb) || a.dkwName.localeCompare(b.dkwName);
+  });
+
+  if (!safe.length && !review.length) {
+    alert('No DKW records loaded. Please import a Service Fusion export first.');
+    return;
+  }
+
+  const wb = XLSX.utils.book_new();
+
+  // ── Sheet 1: Safe to Inactivate ──
+  const SAFE_HEADER = ['\u2713', 'DKW ACCOUNT NAME', 'MATCHED CUSTOMER', 'MATCH TYPE', 'ADDRESS', 'TERRITORY', 'SF INSTRUCTIONS'];
+  const safeRows = safe.map(r => {
+    const territory = S.territoryAssignments[r.dkwName] || '';
+    const matchType = r.matchedBy === 'address' ? 'Address' : 'Name';
+    const instr = 'Search SF for "' + r.dkwName + '" \u2192 Set to Inactive. Customer "' + r.cleanName + '" verified.';
+    return ['', r.dkwName, r.cleanName || '', matchType, r.address || '', territory, instr];
+  });
+
+  const ws1 = XLSX.utils.aoa_to_sheet([SAFE_HEADER, ...safeRows]);
+  ws1['!cols'] = [
+    { wch: 4 },   // checkbox
+    { wch: 36 },  // DKW name
+    { wch: 36 },  // matched customer
+    { wch: 12 },  // match type
+    { wch: 38 },  // address
+    { wch: 22 },  // territory
+    { wch: 60 },  // instructions
+  ];
+  ws1['!views'] = [{ state: 'frozen', ySplit: 1 }];
+  ws1['!rows'] = [{ hpt: 22 }];
+
+  // Cell styles
+  const S_HDR = {
+    fill: { patternType: 'solid', fgColor: { rgb: '1A5C3A' } },
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Calibri' },
+    alignment: { vertical: 'center', horizontal: 'center', wrapText: false },
+    border: { bottom: { style: 'thin', color: { rgb: 'FFFFFF' } } }
+  };
+  const S_ROW_EVEN = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'FFFFFF' } },
+    font: { sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center' }
+  };
+  const S_ROW_ODD = {
+    fill: { patternType: 'solid', fgColor: { rgb: 'F8FAFC' } },
+    font: { sz: 10, name: 'Calibri' },
+    alignment: { vertical: 'center' }
+  };
+
+  SAFE_HEADER.forEach((_, c) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws1[addr]) ws1[addr].s = S_HDR;
+  });
+  safeRows.forEach((row, ri) => {
+    row.forEach((_, c) => {
+      const addr = XLSX.utils.encode_cell({ r: ri + 1, c });
+      if (ws1[addr]) ws1[addr].s = ri % 2 === 0 ? S_ROW_EVEN : S_ROW_ODD;
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws1, 'Safe to Inactivate (' + safe.length + ')');
+
+  // ── Sheet 2: Review First ──
+  const REV_HEADER = ['\u2713', 'DKW ACCOUNT NAME', 'SUGGESTED CUSTOMER NAME', 'ADDRESS', 'TERRITORY', 'SF INSTRUCTIONS'];
+  const revRows = review.map(r => {
+    const territory = S.territoryAssignments[r.dkwName] || '';
+    const suggested = r.suggestedName || r.dkwName.replace(/^DKW[\s\-\u2013]*/i, '').trim();
+    const instr = 'Search SF for customer "' + suggested + '". If found: inactivate "' + r.dkwName + '". If NOT found: check if still active before inactivating.';
+    return ['', r.dkwName, suggested, r.address || '', territory, instr];
+  });
+
+  const ws2 = XLSX.utils.aoa_to_sheet([REV_HEADER, ...revRows]);
+  ws2['!cols'] = [
+    { wch: 4 },   // checkbox
+    { wch: 36 },  // DKW name
+    { wch: 36 },  // suggested name
+    { wch: 38 },  // address
+    { wch: 22 },  // territory
+    { wch: 70 },  // instructions
+  ];
+  ws2['!views'] = [{ state: 'frozen', ySplit: 1 }];
+  ws2['!rows'] = [{ hpt: 22 }];
+
+  REV_HEADER.forEach((_, c) => {
+    const addr = XLSX.utils.encode_cell({ r: 0, c });
+    if (ws2[addr]) ws2[addr].s = S_HDR;
+  });
+  revRows.forEach((row, ri) => {
+    row.forEach((_, c) => {
+      const addr = XLSX.utils.encode_cell({ r: ri + 1, c });
+      if (ws2[addr]) ws2[addr].s = ri % 2 === 0 ? S_ROW_EVEN : S_ROW_ODD;
+    });
+  });
+
+  XLSX.utils.book_append_sheet(wb, ws2, 'Review First (' + review.length + ')');
+
+  // ── Summary / Instructions sheet ──
+  const summaryData = [
+    ['KW Environmental \u2014 DKW Inactivation Checklist'],
+    ['Generated: ' + new Date().toLocaleString()],
+    [''],
+    ['SUMMARY'],
+    ['Safe to inactivate (matched pair found):', safe.length],
+    ['Review before inactivating (no match):', review.length],
+    ['Total DKW records:', safe.length + review.length],
+    [''],
+    ['HOW TO USE'],
+    ['1. Start with the "Safe to Inactivate" sheet \u2014 these have a verified customer account'],
+    ['2. Follow the SF Instructions column for each row'],
+    ['3. Mark the \u2713 column as you complete each one'],
+    ['4. Then work through "Review First" \u2014 search SF for each suggested name before inactivating'],
+    ['5. If a Review First record has no customer counterpart, do NOT inactivate (it may be the only record)'],
+  ];
+  const ws3 = XLSX.utils.aoa_to_sheet(summaryData);
+  ws3['!cols'] = [{ wch: 56 }, { wch: 12 }];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Instructions');
+
+  // Move Instructions to first position
+  wb.SheetNames = ['Instructions', ...wb.SheetNames.filter(n => n !== 'Instructions')];
+
+  const filename = 'KW_Inactivate_Checklist_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+  XLSX.writeFile(wb, filename, { cellStyles: true, bookSST: false, type: 'binary' });
+  uploadExport(wb, filename, 'inactivate-checklist');
 }
 
 // ── Samsara CSV Export ─────────────────────────────────────────────────────
@@ -3414,6 +3836,7 @@ function exportSamsaraCsv() {
   // ── Write multi-sheet XLSX ───────────────────────────────────────────
   const filename = 'KW_Samsara_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx';
   XLSX.writeFile(wb, filename);
+  uploadExport(wb, filename, 'samsara');
 
   const parts = [records.length + ' addresses'];
   if (S.drivers.length) parts.push(S.drivers.length + ' drivers');
@@ -3583,7 +4006,7 @@ function runVerification(wb) {
 // ── Reset ──────────────────────────────────────────────────────────────────
 function doReset() {
   clearSession();
-  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '', drivers: [], vehicles: [], territoryDrivers: {}, _samsaraImport: null, _syncFilter: '' });
+  Object.assign(S, { pairs: [], orphans: [], decisions: {}, territories: [], territoryAssignments: {}, namingStandard: 'dkw', activeTab: 'pairs', searchQuery: '', _territorySelected: new Set(), _zipFilter: '', _territoryFilter: '', customers: [], customerTerritories: {}, customerDecisions: {}, _customerSelected: new Set(), _customerZipFilter: '', _customerTerritoryFilter: '', _customerTypeFilter: '', _customerStatusFilter: '', drivers: [], vehicles: [], territoryDrivers: {}, _samsaraImport: null, _syncFilter: '', _excludedInactive: 0, _excludedParent: 0 });
   document.querySelectorAll('input[name="naming-std"]').forEach(r => { r.checked = r.value === 'dkw'; });
   show('phase-upload', true);
   show('phase-worklist', false);
@@ -3619,6 +4042,7 @@ document.getElementById('export-issues-btn').addEventListener('click', () => {
   const wbNew  = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wbNew, wsNew, 'Remaining Issues');
   XLSX.writeFile(wbNew, 'KW-Cleanup-Remaining-Issues.xlsx');
+  uploadExport(wbNew, 'KW-Cleanup-Remaining-Issues.xlsx', 'verify');
 });
 
 // Naming standard selector

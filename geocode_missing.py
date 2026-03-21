@@ -10,7 +10,7 @@ except ImportError:
     sys.exit(1)
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-SF_EXPORT = '/Users/justinmartin/Downloads/sf-customer-list-full.xlsx'
+SF_EXPORT = None  # Set at runtime via CLI argument or SF_EXPORT_PATH env var
 GEOCODIO_URL = 'https://api.geocod.io/v1.7/geocode'
 BATCH_SIZE = 100  # Geocodio batch limit
 
@@ -322,7 +322,25 @@ def assign_territory(lat, lng, territories):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('sf_export', nargs='?', help='Path to SF customer list export .xlsx (overrides SF_EXPORT_PATH env var)')
+    args = parser.parse_args()
+
     load_env()
+
+    sf_export = args.sf_export or os.environ.get('SF_EXPORT_PATH')
+    if not sf_export:
+        print('ERROR: Provide the SF export path as an argument or set SF_EXPORT_PATH env var.', file=sys.stderr)
+        sys.exit(1)
+    if not os.path.exists(sf_export):
+        print(f'ERROR: SF export not found at {sf_export}. Set SF_EXPORT_PATH env var or pass as argument.', file=sys.stderr)
+        sys.exit(1)
+
+    # Patch module-level name used by get_missing_addresses
+    global SF_EXPORT
+    SF_EXPORT = sf_export
+
     api_key = os.environ.get('GEOCODIO_API_KEY')
     if not api_key:
         print('ERROR: GEOCODIO_API_KEY required in .env', file=sys.stderr)
